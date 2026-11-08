@@ -6,6 +6,9 @@ const fs = require('fs');
 const path = require('path');
 module.exports = {
     name: 'signifier-removed',
+    // What the breaking commit looks like to the agent: an ordinary-looking change,
+    // as these breakages historically were. The title above is never shown to it.
+    commitMessage: 'config: narrow ad signifiers to reduce false positives on clean playlists',
     title: 'Ad signifiers no longer match Twitch\'s stitched-ad markers',
     apply(repo) {
         const p = path.join(repo, 'config/defaults.json');

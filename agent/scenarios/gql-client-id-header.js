@@ -8,6 +8,9 @@ const path = require('path');
 const FILES = ['vaft/vaft.user.js', 'vaft/vaft-ublock-origin.js'];
 module.exports = {
     name: 'gql-client-id-header',
+    // What the breaking commit looks like to the agent: an ordinary-looking change,
+    // as these breakages historically were. The title above is never shown to it.
+    commitMessage: 'gqlRequest: drop redundant Client-ID header (sent by the main-thread relay)',
     title: 'Backup PlaybackAccessToken requests sent without Client-ID',
     apply(repo) {
         for (const f of FILES) {

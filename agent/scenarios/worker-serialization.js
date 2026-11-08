@@ -9,6 +9,9 @@ const path = require('path');
 const FILES = ['vaft/vaft.user.js', 'vaft/vaft-ublock-origin.js'];
 module.exports = {
     name: 'worker-serialization',
+    // What the breaking commit looks like to the agent: an ordinary-looking change,
+    // as these breakages historically were. The title above is never shown to it.
+    commitMessage: 'perf: precompile ad-tag matchers instead of substring scans per poll',
     title: 'Hoisted ad-tag check references outer scope from a serialized worker function',
     apply(repo) {
         for (const f of FILES) {
