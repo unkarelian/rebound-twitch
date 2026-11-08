@@ -1,0 +1,11 @@
+[Unit]
+Description=Rebound deterministic fixers (hourly proactive check)
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/Projects/rebound-twitch
+EnvironmentFile=-%h/.config/rebound-twitch/monitor.env
+ExecStart=/bin/bash -lc 'exec node fixers/run.js --trigger hourly'
+TimeoutStartSec=50min
+Nice=10

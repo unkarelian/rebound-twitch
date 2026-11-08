@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>About Rebound for Twitch</title>
+<style>
+  body { font: 15px/1.55 system-ui, sans-serif; max-width: 640px; margin: 40px auto; padding: 0 20px; color-scheme: light dark; }
+  h1 { font-size: 22px; } code { font-size: 13px; }
+</style>
+</head>
+<body>
+<h1>Rebound for Twitch</h1>
+<p>An open-source ad blocker for Twitch that repairs itself quickly when Twitch changes something.
+Values that Twitch rotates (GraphQL query hashes, the web client ID, ad markers) come from a small
+<strong>signed</strong> data file. The extension checks its Ed25519 signature and rejects anything unsigned,
+altered, or malformed. That file holds data only, never code.</p>
+
+<h2>Privacy</h2>
+<p>No telemetry. The extension makes two requests of its own: it downloads the signed config, and it
+downloads a public status file that shows when blocking was last verified to work. Neither request
+includes anything about you. "Report broken" opens a GitHub issue form that you can read and edit
+before you send it.</p>
+
+<h2>Credits</h2>
+<p>Built on <a href="https://github.com/ryanbr/TwitchAdSolutions">TwitchAdSolutions</a> (vaft) by the
+<strong>TwitchAdSolutions Contributors</strong>, originally
+<a href="https://github.com/pixeltris/TwitchAdSolutions">pixeltris/TwitchAdSolutions</a>, which builds on
+<a href="https://github.com/cleanlock/VideoAdBlockForTwitch">VideoAdBlockForTwitch</a>. MIT licensed.</p>
+
+<p>Rebound is not affiliated with, endorsed by, or connected to Twitch Interactive, Inc.
+"Twitch" is a trademark of Twitch Interactive, Inc.</p>
+
+<p><a href="https://github.com/unkarelian/rebound-twitch">Source code, issues and status</a></p>
+</body>
+</html>

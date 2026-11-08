@@ -1,0 +1,68 @@
+# Code releases: always human. Run manually (or push a v* tag) after merging a
+# reviewed PR. The `release` environment requires approval; AMO / Chrome Web
+# Store credentials are environment secrets there. Steps whose secrets are
+# missing are skipped, so the GitHub Release (with the userscript escape hatch)
+# always gets made.
+name: Release extension
+on:
+  workflow_dispatch:
+    inputs:
+      amo_channel:
+        description: AMO channel
+        type: choice
+        options: [unlisted, listed]
+        default: unlisted
+  push:
+    tags: ['v*']
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    environment: release
+    env:
+      # Step `if:` cannot read secrets directly; expose presence flags.
+      HAS_AMO: ${{ secrets.AMO_JWT_ISSUER != '' }}
+      HAS_CWS: ${{ secrets.CWS_CLIENT_ID != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+        env: { PUPPETEER_SKIP_DOWNLOAD: "1" }
+      - run: node tools/apply-rebound-patches.js --check && node tools/validate-js.js && npm test
+      - name: Build
+        run: |
+          node extension/build.js
+          node tools/build-userscript.js
+          npx web-ext lint --source-dir extension/dist/firefox
+          v=$(node -p 'require("./package.json").version')
+          echo "VERSION=$v" >> "$GITHUB_ENV"
+          (cd extension/dist/chrome && zip -qr "../rebound-twitch-chrome-$v.zip" .)
+          npx web-ext build --source-dir extension/dist/firefox --artifacts-dir extension/dist --filename "rebound-twitch-firefox-$v-unsigned.zip" --overwrite-dest
+      - name: Sign on AMO (${{ github.event.inputs.amo_channel || 'unlisted' }})
+        if: env.HAS_AMO == 'true'
+        env:
+          AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
+          AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+        run: |
+          npx web-ext sign --source-dir extension/dist/firefox --artifacts-dir extension/dist/amo \
+            --channel "${{ github.event.inputs.amo_channel || 'unlisted' }}" \
+            --api-key "$AMO_JWT_ISSUER" --api-secret "$AMO_JWT_SECRET" --timeout 900000 \
+            --amo-metadata extension/amo-metadata.json
+      - name: Upload to Chrome Web Store
+        if: env.HAS_CWS == 'true'
+        env:
+          CWS_CLIENT_ID: ${{ secrets.CWS_CLIENT_ID }}
+          CWS_CLIENT_SECRET: ${{ secrets.CWS_CLIENT_SECRET }}
+          CWS_REFRESH_TOKEN: ${{ secrets.CWS_REFRESH_TOKEN }}
+          CWS_EXTENSION_ID: ${{ vars.CWS_EXTENSION_ID }}
+        run: |
+          npx --yes chrome-webstore-upload-cli@3 upload --source "extension/dist/rebound-twitch-chrome-$VERSION.zip" \
+            --extension-id "$CWS_EXTENSION_ID" --client-id "$CWS_CLIENT_ID" --client-secret "$CWS_CLIENT_SECRET" --refresh-token "$CWS_REFRESH_TOKEN"
+      - name: GitHub Release
+        env: { GH_TOKEN: "${{ github.token }}" }
+        run: |
+          files="extension/dist/rebound-vaft.user.js extension/dist/rebound-twitch-chrome-$VERSION.zip extension/dist/rebound-twitch-firefox-$VERSION-unsigned.zip"
+          for f in extension/dist/amo/*.xpi; do [ -f "$f" ] && files="$files $f"; done
+          gh release create "v$VERSION" $files --title "Rebound for Twitch $VERSION" --generate-notes || gh release upload "v$VERSION" $files --clobber

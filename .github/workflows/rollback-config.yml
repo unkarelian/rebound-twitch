@@ -1,0 +1,30 @@
+# One-click rollback: re-signs the content of an earlier published version under
+# a new, higher version number (extensions refuse lower versions by design).
+name: Rollback config
+on:
+  workflow_dispatch:
+    inputs:
+      to_version:
+        description: Published version whose content should go live again (see the live branch history/)
+        required: true
+permissions:
+  contents: write
+  pull-requests: write
+concurrency:
+  group: publish-config
+  cancel-in-progress: false
+jobs:
+  rollback:
+    runs-on: ubuntu-latest
+    environment: config-human
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: master, fetch-depth: 0 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Re-sign v${{ github.event.inputs.to_version }} as a new version
+        env:
+          REBOUND_SIGNING_KEY: ${{ secrets.REBOUND_SIGNING_KEY }}
+          REBOUND_SIGNING_KEY_ID: ${{ vars.REBOUND_SIGNING_KEY_ID || 'k1' }}
+          GH_TOKEN: ${{ github.token }}
+        run: tools/publish-live.sh rollback "${{ github.event.inputs.to_version }}"

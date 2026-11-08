@@ -105,3 +105,13 @@ Called on every buffer monitor tick. Guards via `dataset.tasHidden` to skip alre
 - Ad-break-card text match (PR #141) — scanned `span/p/h1/h2/h3` text for "taking an ad break" phrases then walked up via fuzzy `[class*="overlay"]` + `parentElement` fallback. Could hide player controls on false matches. TTV-AB doesn't attempt this either.
 
 Only keep overlay hides that use exact attribute selectors with no parent walking.
+
+## Rebound (this fork)
+
+Rebound wraps vaft as a browser extension with signed remote config, a live monitor, config auto-fixers and an agent fix loop. See `README.md` (top), `docs/DECISIONS.md` and `docs/RUNBOOK.md`.
+
+- Rebound's changes to `vaft/vaft.user.js` + `vaft/vaft-ublock-origin.js` are applied by `tools/apply-rebound-patches.js`, which is idempotent and anchor-checked. `--check` runs in CI. If you change code near a patch, keep the patch tool in sync.
+- Remote-config values reach the worker via `applyRemoteConfig(self, ...)` right after `declareOptions(self)` in the blob. It is serialized like the functions above and must not reference outer scope. New config keys need changes in all of: `config/schema.json`, `extension/src/shared/config.js` (`validateConfig`), `applyRemoteConfig`, `config/defaults.json` and tests.
+- Monitor instrumentation (`MonitorMode`, `twitchAdSolutions_monitor=true`) posts `MonitorPlaylist` / GQL results to `window.__reboundMonitorLog`. It is off for users.
+- Tests: `npm test` runs upstream's `tests/test.js` and `tests/rebound.test.js`. The latter loads the real vaft in a VM, including the worker blob, via `tests/helpers/vaft-harness.js`. Use it to turn captured playlists into regression fixtures.
+- Remote config is data only: no code, regexes or URLs. The signing key never lives on the monitor host or in an agent sandbox.

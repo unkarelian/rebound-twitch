@@ -1,0 +1,9 @@
+node_modules/
+extension/dist/
+extension/web-ext-artifacts/
+monitor/state/
+monitor/artifacts/
+fixers/state/
+agent/work/
+*.private.pem
+.env

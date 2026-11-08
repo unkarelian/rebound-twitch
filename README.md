@@ -1,3 +1,39 @@
+# Rebound for Twitch
+
+A Twitch ad blocker that **repairs itself fast** when Twitch changes something. It runs the
+[TwitchAdSolutions](https://github.com/ryanbr/TwitchAdSolutions) `vaft` core (MIT, by the
+**TwitchAdSolutions Contributors**) and adds:
+
+- **Signed remote config.** The values Twitch rotates (GQL operation and hash, client ID, ad markers,
+  backup player types, overlay selectors) live in a small Ed25519-signed JSON file. The extension
+  rejects anything unsigned, altered, malformed or older than what it has. It's data only, never code.
+- **A live monitor.** Every 12 minutes, real Firefox watches 3 live channels twice: once without the
+  extension (does Twitch serve ads right now?) and once with it. It checks that no ad segments get
+  through, content plays, no ad UI shows and nothing errors. Status: [`status.json`](https://raw.githubusercontent.com/unkarelian/rebound-twitch/status/status.json).
+- **Deterministic fixers.** A stale hash or client ID gets fixed, re-verified live and published
+  with no human involved. New ad markers and player-type order changes get proposed with evidence.
+- **An agent fix loop.** Code-level breakages get a sandboxed coding agent that reproduces the
+  failure as a test, fixes it, passes the live monitor and opens a PR for one-click human review.
+
+No telemetry. Not affiliated with Twitch.
+
+| | |
+|---|---|
+| Install | Firefox: see [Releases](https://github.com/unkarelian/rebound-twitch/releases) (AMO listing pending). Userscript escape hatch: `rebound-vaft.user.js` in each release. |
+| How it works | [`docs/DECISIONS.md`](docs/DECISIONS.md) |
+| Operating it | [`docs/RUNBOOK.md`](docs/RUNBOOK.md) |
+| Breakage history | [`docs/BREAKAGE-LOG.md`](docs/BREAKAGE-LOG.md) |
+| Develop | `npm ci && npm test && node extension/build.js && npx web-ext run --source-dir extension/dist/firefox` |
+
+Layout: `extension/` (WebExtension), `config/` (schema, bundled defaults, published history),
+`monitor/` (live tests), `fixers/` (config auto-fixers), `agent/` (fix-agent prompt, sandbox,
+orchestrator, replay scenarios), `tools/` (signing, publishing, patching), `deploy/` (server units).
+The Rebound changes to `vaft` are applied by `tools/apply-rebound-patches.js` and checked in CI.
+
+Everything below is upstream's README.
+
+---
+
 Originally forked from [pixeltris/TwitchAdSolutions](https://github.com/pixeltris/TwitchAdSolutions) (archived).
 
 # TwitchAdSolutions

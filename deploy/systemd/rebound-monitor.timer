@@ -1,0 +1,11 @@
+[Unit]
+Description=Run the Rebound live monitor every 12 minutes
+
+[Timer]
+OnBootSec=3min
+OnUnitInactiveSec=12min
+RandomizedDelaySec=60
+Persistent=false
+
+[Install]
+WantedBy=timers.target

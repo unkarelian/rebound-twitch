@@ -1,0 +1,7 @@
+{
+  "version": {
+    "license": "MIT",
+    "release_notes": { "en-US": "See https://github.com/unkarelian/rebound-twitch/releases" },
+    "approval_notes": "Open source: https://github.com/unkarelian/rebound-twitch. content.js carries the bundled page script (TwitchAdSolutions vaft, MIT) as a string and injects it at document_start because it must hook window.Worker before Twitch's player starts. The only remote data is a signed JSON config (Ed25519, verified in background.js against keys in shared/keys.js, schema-validated, data only) and a display-only status JSON, both from raw.githubusercontent.com. Build: npm ci && node extension/build.js"
+  }
+}

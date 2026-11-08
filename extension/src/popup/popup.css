@@ -1,0 +1,20 @@
+:root { color-scheme: light dark; --accent: #0f9d8a; --muted: #777; }
+body { font: 13px/1.4 system-ui, sans-serif; width: 290px; margin: 0; padding: 12px 14px; }
+header { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+h1 { font-size: 15px; margin: 0; }
+h1 .for { font-weight: normal; color: var(--muted); }
+.toggle { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 14px; cursor: pointer; }
+.toggle input { accent-color: var(--accent); width: 16px; height: 16px; }
+.hint { color: var(--accent); margin: 4px 0 0; }
+dl { display: grid; grid-template-columns: auto 1fr; gap: 3px 10px; margin: 12px 0; }
+dt { color: var(--muted); }
+dd { margin: 0; text-align: right; }
+.state-pass { color: #1a8f3c; }
+.state-fail { color: #c62828; font-weight: 600; }
+.state-inconclusive, .state-degraded { color: #b26a00; }
+.error { color: #c62828; font-size: 12px; margin: 0 0 8px; word-break: break-word; }
+.buttons { display: flex; gap: 8px; }
+button { flex: 1; padding: 6px; border-radius: 6px; border: 1px solid #8884; background: transparent; cursor: pointer; font: inherit; }
+button:hover { border-color: var(--accent); }
+footer { margin-top: 12px; color: var(--muted); font-size: 11px; }
+footer a { color: inherit; }

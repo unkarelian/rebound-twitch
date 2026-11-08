@@ -1,0 +1,68 @@
+# Weekly: merge ryanbr/TwitchAdSolutions into a branch, re-check the Rebound
+# patches and tests, and open a PR. Conflicts open an issue instead.
+name: Upstream sync
+on:
+  schedule:
+    - cron: '17 6 * * 1'
+  workflow_dispatch:
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: master, fetch-depth: 0 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - name: Merge upstream
+        id: merge
+        env: { GH_TOKEN: "${{ github.token }}" }
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote add upstream https://github.com/ryanbr/TwitchAdSolutions.git
+          git fetch -q upstream master
+          if git merge-base --is-ancestor upstream/master HEAD; then echo "Already up to date."; echo "skip=1" >> "$GITHUB_OUTPUT"; exit 0; fi
+          branch="upstream-sync/$(date -u +%F)"
+          echo "branch=$branch" >> "$GITHUB_OUTPUT"
+          git checkout -b "$branch"
+          if ! git merge --no-edit upstream/master; then
+            files=$(git diff --name-only --diff-filter=U | sed 's/^/- /')
+            git merge --abort
+            gh issue create --title "Upstream sync conflict $(date -u +%F)" --label upstream-sync \
+              --body "Merging \`ryanbr/TwitchAdSolutions@$(git rev-parse --short upstream/master)\` conflicts in:"$'\n'"$files"$'\n\n'"Resolve locally: \`git fetch upstream && git merge upstream/master\`, then \`node tools/apply-rebound-patches.js\` and \`npm test\`." || true
+            echo "skip=1" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+      - if: steps.merge.outputs.skip != '1'
+        run: npm ci
+        env: { PUPPETEER_SKIP_DOWNLOAD: "1" }
+      - name: Re-apply patches, test, open PR
+        if: steps.merge.outputs.skip != '1'
+        env: { GH_TOKEN: "${{ github.token }}" }
+        run: |
+          set +e
+          patch_out=$(node tools/apply-rebound-patches.js 2>&1); patch_rc=$?
+          if ! git diff --quiet; then git commit -qam "Re-apply Rebound patches after upstream merge"; fi
+          test_out=$(npm test 2>&1 | tail -15); test_rc=${PIPESTATUS[0]}
+          node extension/build.js >/dev/null && npx web-ext lint --source-dir extension/dist/firefox >/tmp/lint.txt 2>&1; lint_rc=$?
+          set -e
+          git push -q origin "${{ steps.merge.outputs.branch }}"
+          status() { [ "$1" = 0 ] && echo "✅" || echo "❌"; }
+          {
+            echo "Weekly merge of [ryanbr/TwitchAdSolutions](https://github.com/ryanbr/TwitchAdSolutions)."
+            echo
+            echo "| check | result |"; echo "|---|---|"
+            echo "| Rebound patches | $(status $patch_rc) |"
+            echo "| unit tests | $(status $test_rc) |"
+            echo "| web-ext lint | $(status $lint_rc) |"
+            echo
+            echo "### Upstream commits"; git log --oneline HEAD^1..upstream/master | head -40 | sed 's/^/- /'
+            echo; echo "<details><summary>patch tool</summary>"; echo; echo '```'; echo "$patch_out"; echo '```'; echo "</details>"
+            echo "<details><summary>tests</summary>"; echo; echo '```'; echo "$test_out"; echo '```'; echo "</details>"
+            echo; echo "Before merging: let the live monitor run against this branch (\`node monitor/run.js --channels 3 --no-state\` on a checkout of it), and check the upstream CHANGELOG entries above for anything that touches the patched functions."
+          } > /tmp/body.md
+          gh label create upstream-sync --force >/dev/null 2>&1 || true
+          gh pr create --base master --head "${{ steps.merge.outputs.branch }}" --title "Upstream sync $(date -u +%F)" --body-file /tmp/body.md --label upstream-sync

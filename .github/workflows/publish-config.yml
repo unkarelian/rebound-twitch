@@ -1,0 +1,71 @@
+# Signs and publishes a config candidate pushed by the fixers (or a human) to a
+# config-candidates/** branch. tools/publish-gate.js decides auto vs. human:
+#   auto  -> job runs in environment `config-auto`  (no reviewers)
+#   human -> job runs in environment `config-human` (required reviewer: one click
+#            "Approve and deploy" on github.com or the mobile app)
+# REBOUND_SIGNING_KEY is an *environment* secret of those two environments only.
+name: Publish config
+on:
+  push:
+    branches: ['config-candidates/**']
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: config-candidates/... branch to publish
+        required: true
+permissions:
+  contents: write
+  pull-requests: write
+concurrency:
+  group: publish-config
+  cancel-in-progress: false
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    outputs:
+      decision: ${{ steps.gate.outputs.decision }}
+      ref: ${{ steps.ref.outputs.ref }}
+    steps:
+      - id: ref
+        run: echo "ref=${{ github.event.inputs.branch || github.ref_name }}" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+        with: { ref: "${{ steps.ref.outputs.ref }}", fetch-depth: 0 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Current live config
+        run: git show origin/live:config.json > /tmp/live.json 2>/dev/null || rm -f /tmp/live.json
+      - id: gate
+        run: |
+          out=$(node tools/publish-gate.js candidate/config.json candidate/evidence.json /tmp/live.json)
+          echo "$out"
+          echo "decision=$(node -pe 'JSON.parse(process.argv[1]).decision' "$out")" >> "$GITHUB_OUTPUT"
+          {
+            echo "## Config candidate \`${{ steps.ref.outputs.ref }}\`"
+            echo; echo "**Gate:** \`$(node -pe 'JSON.parse(process.argv[1]).decision' "$out")\`"
+            echo; node -e 'const d=JSON.parse(process.argv[1]); for (const r of d.reasons||[]) console.log("- " + r); if (d.changed) console.log("\nChanged keys: " + d.changed.join(", "))' "$out"
+            echo; echo "### Note"; node -pe 'require("./candidate/config.json").note || ""'
+            echo; echo "### Live test"; node -e 'const e=require("./candidate/evidence.json"); const rs=(e.liveTest&&e.liveTest.run&&e.liveTest.run.results)||[]; console.log("| channel | verdict | playback |\n|---|---|---|"); for (const r of rs) console.log(`| ${r.channel} | ${r.verdict} | ${r.B&&r.B.ok?"ok":(r.B&&r.B.reason)||"?"} |`)'
+            echo; echo "<details><summary>evidence.json</summary>"; echo; echo '```json'; cat candidate/evidence.json; echo '```'; echo "</details>"
+          } >> "$GITHUB_STEP_SUMMARY"
+  publish:
+    needs: gate
+    if: needs.gate.outputs.decision == 'auto' || needs.gate.outputs.decision == 'human'
+    runs-on: ubuntu-latest
+    environment: ${{ needs.gate.outputs.decision == 'auto' && 'config-auto' || 'config-human' }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: master, fetch-depth: 0 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Fetch candidate
+        run: |
+          git fetch -q origin "${{ needs.gate.outputs.ref }}"
+          mkdir -p /tmp/cand && git show "FETCH_HEAD:candidate/config.json" > /tmp/cand/config.json
+      - name: Sign and publish
+        env:
+          REBOUND_SIGNING_KEY: ${{ secrets.REBOUND_SIGNING_KEY }}
+          REBOUND_SIGNING_KEY_ID: ${{ vars.REBOUND_SIGNING_KEY_ID || 'k1' }}
+          GH_TOKEN: ${{ github.token }}
+        run: tools/publish-live.sh publish /tmp/cand/config.json
+      - name: Delete candidate branch
+        run: git push -q origin --delete "${{ needs.gate.outputs.ref }}" || true

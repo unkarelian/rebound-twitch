@@ -67,6 +67,16 @@
         // logger so the diagnostic stays focused on genuinely new markers.
         scope.KnownNonAdSignifiers = ['twitch-session', 'twitch-stream-source', 'twitch-ad-quartile', 'twitch-assignment'];
         scope.AdSegmentURLPatterns = ['/adsquared/', '/_404/', '/processing'];
+        // Rebound: values Twitch rotates. Defaults below; overridden by signed remote
+        // config via applyRemoteConfig(). Read by serialized worker functions, so
+        // they must live here (see CLAUDE.md "Worker Blob Serialization").
+        scope.PlaybackAccessTokenOperation = 'PlaybackAccessToken';
+        scope.PlaybackAccessTokenHash = 'ed230aa1e33e07eebb8928504583da78a5173989fadfb1ac94be06a04f3cdbe9';
+        scope.RecordAdEventHash = '7e6c69e6eb59f8ccb97ab73686f3d8b7d85a72a0298745ccd8bfc68e4054ca5b';
+        scope.OverlaySelectors = ['[data-test-selector="sda-wrapper"]'];// exact attribute selectors only
+        scope.RemoteConfig = null;
+        scope.RemoteConfigVersion = 0;
+        scope.MonitorMode = false;// Rebound live monitor instrumentation (localStorage twitchAdSolutions_monitor=true)
         // Precompiled regexes shared across the stripAdSegments hot path. Declared
         // here (serialized into the worker blob with declareOptions) so literals
         // inside the per-line strip loop don't recompile on every iteration — for
@@ -129,6 +139,32 @@
         scope.AdSegmentCache = new Map();
         scope.AllSegmentsAreAdSegments = false;
         scope.StreamInfoMaxAgeMs = 30 * 60 * 1000;
+    }
+    // Rebound: apply a remote config object onto a scope (window or worker self).
+    // Serialized into the worker blob, so it may only touch its arguments.
+    // The extension has already verified the signature and schema; this re-checks
+    // types so a malformed object can never put a non-string into a hot path.
+    // Returns true if applied. Older or equal versions are ignored.
+    function applyRemoteConfig(scope, cfg) {
+        if (!cfg || typeof cfg !== 'object' || typeof cfg.version !== 'number') return false;
+        if (cfg.version <= scope.RemoteConfigVersion) return false;
+        const isHash = (v) => typeof v === 'string' && /^[a-f0-9]{64}$/.test(v);
+        const strList = (v) => Array.isArray(v) && v.length > 0 && v.every((s) => typeof s === 'string' && s.length > 0);
+        const gql = cfg.gql || {};
+        if (gql.playbackAccessToken && isHash(gql.playbackAccessToken.sha256Hash)) scope.PlaybackAccessTokenHash = gql.playbackAccessToken.sha256Hash;
+        if (gql.playbackAccessToken && typeof gql.playbackAccessToken.operationName === 'string' && /^[A-Za-z_]{1,64}$/.test(gql.playbackAccessToken.operationName)) scope.PlaybackAccessTokenOperation = gql.playbackAccessToken.operationName;
+        if (gql.recordAdEvent && isHash(gql.recordAdEvent.sha256Hash)) scope.RecordAdEventHash = gql.recordAdEvent.sha256Hash;
+        if (typeof cfg.clientId === 'string' && /^[a-z0-9]{20,40}$/.test(cfg.clientId)) scope.ClientID = cfg.clientId;
+        if (strList(cfg.adSignifiers)) scope.AdSignifiers = cfg.adSignifiers.slice();
+        if (Array.isArray(cfg.knownNonAdSignifiers) && cfg.knownNonAdSignifiers.every((s) => typeof s === 'string')) scope.KnownNonAdSignifiers = cfg.knownNonAdSignifiers.slice();
+        if (strList(cfg.adSegmentUrlPatterns)) scope.AdSegmentURLPatterns = cfg.adSegmentUrlPatterns.slice();
+        if (strList(cfg.backupPlayerTypes)) scope.BackupPlayerTypes = cfg.backupPlayerTypes.slice();
+        if (typeof cfg.defaultPlayerType === 'string' && /^[a-z_]{1,32}$/.test(cfg.defaultPlayerType)) scope.ForceAccessTokenPlayerType = cfg.defaultPlayerType;
+        if (Array.isArray(cfg.overlaySelectors) && cfg.overlaySelectors.every((s) => typeof s === 'string' && /^\[data-[a-z-]+="[A-Za-z0-9_-]+"\]$/.test(s))) scope.OverlaySelectors = cfg.overlaySelectors.slice();
+        scope.RemoteConfig = cfg;
+        scope.RemoteConfigVersion = cfg.version;
+        console.log('[AD DEBUG] Rebound config v' + cfg.version + ' applied');
+        return true;
     }
     function pruneStreamInfos() {
         const now = Date.now();
@@ -360,6 +396,7 @@
                     ${processM3U8.toString()}
                     ${hookWorkerFetch.toString()}
                     ${declareOptions.toString()}
+                    ${applyRemoteConfig.toString()}
                     ${getAccessToken.toString()}
                     ${gqlRequest.toString()}
                     ${parseAttributes.toString()}
@@ -370,6 +407,8 @@
                     ${createStreamInfo.toString()}
                     const workerString = getWasmWorkerJs('${twitchBlobUrl.replaceAll("'", "%27")}');
                     declareOptions(self);
+                    applyRemoteConfig(self, ${JSON.stringify(RemoteConfig)});
+                    MonitorMode = ${MonitorMode};
                     if (!self.__tasPruneInterval) {
                         self.__tasPruneInterval = setInterval(pruneStreamInfos, 5 * 60 * 1000);
                     }
@@ -402,6 +441,9 @@
                             ClientIntegrityHeader = e.data.value;
                         } else if (e.data.key == 'UpdateAuthorizationHeader') {
                             AuthorizationHeader = e.data.value;
+                        } else if (e.data.key == 'UpdateRemoteConfig') {
+                            applyRemoteConfig(self, e.data.value.config);
+                            ForceAccessTokenPlayerType = e.data.value.forceAccessTokenPlayerType;
                         } else if (e.data.key == 'FetchResponse') {
                             const responseData = e.data.value;
                             if (pendingFetchRequests.has(responseData.id)) {
@@ -496,6 +538,8 @@
                             if (driftCatchUpTimeout) { clearTimeout(driftCatchUpTimeout); driftCatchUpTimeout = null; }
                             try { getPlayerVideoElement().playbackRate = 1.0; } catch {}
                         }
+                    } else if (e.data.key == 'MonitorPlaylist') {
+                        reboundMonitorPush('playlist', e.data.value);
                     } else if (e.data.key == 'PauseResumePlayer') {
                         doTwitchPlayerTask(true, false);
                     } else if (e.data.key == 'ReloadPlayer') {
@@ -573,7 +617,27 @@
                     return new Promise(function(resolve, reject) {
                         const processAfter = async function(response) {
                             if (response.status === 200) {
-                                resolve(new Response(await processM3U8(url, await response.text(), realFetch)));
+                                const rawText = await response.text();
+                                const processedText = await processM3U8(url, rawText, realFetch);
+                                if (MonitorMode) {
+                                    // Rebound monitor: did ad media survive our processing? Strip mode keeps the
+                                    // DATERANGE tags and serves BLANK_MP4 for cached ad segment URLs, so the honest
+                                    // measure is non-live segments in the output that are NOT in AdSegmentCache.
+                                    try {
+                                        const outLines = String(processedText).split(/\r?\n/);
+                                        let leaked = 0;
+                                        for (let li = 0; li < outLines.length - 1; li++) {
+                                            if (outLines[li].startsWith('#EXTINF') && (!outLines[li].includes(',live') || AdSegmentURLPatterns.some((p) => outLines[li + 1].includes(p))) && !AdSegmentCache.has(outLines[li + 1])) leaked++;
+                                        }
+                                        const rawAds = hasAdTags(rawText);
+                                        postMessage({ key: 'MonitorPlaylist', value: {
+                                            at: Date.now(), rawHasAds: rawAds, outHasAds: hasAdTags(String(processedText)), leakedAdSegments: leaked,
+                                            signifiers: getMatchedAdSignifiers(rawText), configVersion: RemoteConfigVersion,
+                                            raw: rawAds ? rawText.slice(0, 30000) : null, out: rawAds ? String(processedText).slice(0, 30000) : null
+                                        } });
+                                    } catch {}
+                                }
+                                resolve(new Response(processedText));
                             } else {
                                 resolve(response);
                             }
@@ -836,7 +900,7 @@
                 const makePacket = (event, extra) => ({
                     operationName: 'ClientSideAdEventHandling_RecordAdEvent',
                     variables: { input: { eventName: event, eventPayload: JSON.stringify({ ...payload, ...extra }), radToken } },
-                    extensions: { persistedQuery: { version: 1, sha256Hash: '7e6c69e6eb59f8ccb97ab73686f3d8b7d85a72a0298745ccd8bfc68e4054ca5b' } }
+                    extensions: { persistedQuery: { version: 1, sha256Hash: RecordAdEventHash } }
                 });
                 // Mark this ad spoofed BEFORE building the batch so the pod-complete
                 // size check below reflects it.
@@ -1891,7 +1955,7 @@
     // Request a playback access token from Twitch GQL using the given player type
     function getAccessToken(channelName, playerType) {
         const body = {
-            operationName: 'PlaybackAccessToken',
+            operationName: PlaybackAccessTokenOperation,
             variables: {
                 isLive: true,
                 login: channelName,
@@ -1903,7 +1967,7 @@
             extensions: {
                 persistedQuery: {
                     version:1,
-                    sha256Hash:"ed230aa1e33e07eebb8928504583da78a5173989fadfb1ac94be06a04f3cdbe9"
+                    sha256Hash: PlaybackAccessTokenHash
                 }
             }
         };
@@ -2357,7 +2421,7 @@
     function hideTwitchAdOverlays() {
         if (!cachedPlayerRootDiv || !cachedPlayerRootDiv.isConnected) return;
         // Hide stream display ad (SDA) wrapper
-        const sdaElements = document.querySelectorAll('[data-test-selector="sda-wrapper"]');
+        const sdaElements = (OverlaySelectors.length ? document.querySelectorAll(OverlaySelectors.join(',')) : []);
         for (let i = 0; i < sdaElements.length; i++) {
             if (!sdaElements[i].dataset.tasHidden) {
                 sdaElements[i].dataset.tasHidden = '';
@@ -2853,6 +2917,11 @@
             });
             clearTimeout(timeoutId);
             const responseBody = await response.text();
+            if (MonitorMode && fetchRequest.options && typeof fetchRequest.options.body === 'string' && fetchRequest.options.body.includes('PlaybackAccessToken')) {
+                let gqlErrors = null;
+                try { const parsed = JSON.parse(responseBody); gqlErrors = (Array.isArray(parsed) ? parsed : [parsed]).flatMap((r) => r && r.errors ? r.errors.map((x) => x.message) : []); } catch { gqlErrors = ['unparseable response']; }
+                reboundMonitorPush('gql', { at: Date.now(), status: response.status, errors: gqlErrors, playerType: (fetchRequest.options.body.match(/"playerType":"([a-z_]+)"/) || [])[1] || null });
+            }
             const responseObject = {
                 id: fetchRequest.id,
                 status: response.status,
@@ -3005,6 +3074,27 @@
         }
     }
     declareOptions(window);
+    // Rebound: remote config. The extension's content script sets
+    // window.__reboundRemoteConfig (signature already verified) before this runs,
+    // and posts later updates. Userscript/uBlock builds keep the defaults above.
+    applyRemoteConfig(window, window.__reboundRemoteConfig || null);
+    function reboundMonitorPush(kind, value) {
+        const log = window.__reboundMonitorLog || (window.__reboundMonitorLog = []);
+        log.push({ kind: kind, ...value });
+        if (log.length > 400) log.splice(0, log.length - 400);
+    }
+    window.__reboundState = () => ({ configVersion: RemoteConfigVersion, playbackAccessTokenHash: PlaybackAccessTokenHash, clientId: ClientID, monitorMode: MonitorMode, workers: twitchWorkers.length });
+    window.addEventListener('message', function(e) {
+        if (e.source !== window || !e.data || e.data.type !== 'rebound-config') return;
+        if (applyRemoteConfig(window, e.data.config)) {
+            try {
+                const lsPlayerTypeLate = localStorage.getItem('twitchAdSolutions_playerType');
+                if (lsPlayerTypeLate !== null) ForceAccessTokenPlayerType = lsPlayerTypeLate;
+            } catch {}
+            postTwitchWorkerMessage('UpdateRemoteConfig', { config: e.data.config, forceAccessTokenPlayerType: ForceAccessTokenPlayerType });
+        }
+    });
+    try { MonitorMode = localStorage.getItem('twitchAdSolutions_monitor') === 'true'; } catch {}
     try {
         const lsReloadAfterAd = localStorage.getItem('twitchAdSolutions_reloadPlayerAfterAd');
         if (lsReloadAfterAd !== null) {

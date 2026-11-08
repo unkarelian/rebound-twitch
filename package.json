@@ -1,0 +1,26 @@
+{
+  "name": "rebound-twitch",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Rebound for Twitch: self-healing Twitch ad blocker built on TwitchAdSolutions (vaft).",
+  "license": "MIT",
+  "scripts": {
+    "test": "node tests/test.js && node --test tests/rebound.test.js",
+    "validate": "node tools/validate-js.js",
+    "build": "node extension/build.js",
+    "lint:ext": "npm run build && web-ext lint --source-dir extension/dist/firefox --self-hosted",
+    "monitor": "node monitor/run.js",
+    "fixers": "node fixers/run.js"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "devDependencies": {
+    "acorn": "^8.19.0",
+    "ajv": "^8.20.0",
+    "web-ext": "^10.8.0"
+  },
+  "dependencies": {
+    "puppeteer": "^25.16.0"
+  }
+}

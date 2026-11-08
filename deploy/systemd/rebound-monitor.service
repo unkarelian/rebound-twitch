@@ -1,0 +1,13 @@
+[Unit]
+Description=Rebound for Twitch live monitor run
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/Projects/rebound-twitch
+EnvironmentFile=-%h/.config/rebound-twitch/monitor.env
+Environment=REBOUND_PUBLISH_STATUS=1
+ExecStart=/bin/bash -lc 'exec node monitor/run.js --channels 3 --duration 90 --control-duration 60'
+ExecStartPost=/bin/bash -lc 'find %h/Projects/rebound-twitch/monitor/artifacts -mindepth 1 -maxdepth 1 -mtime +14 -exec rm -rf {} + 2>/dev/null; true'
+TimeoutStartSec=25min
+Nice=5

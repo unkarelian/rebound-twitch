@@ -1,0 +1,10 @@
+[Unit]
+Description=Run Rebound fixers hourly
+
+[Timer]
+OnBootSec=20min
+OnUnitActiveSec=1h
+RandomizedDelaySec=5min
+
+[Install]
+WantedBy=timers.target

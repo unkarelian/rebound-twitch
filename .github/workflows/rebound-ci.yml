@@ -1,0 +1,27 @@
+name: Rebound CI
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+        env: { PUPPETEER_SKIP_DOWNLOAD: "1" }
+      - name: Rebound patches present in synced vaft files
+        run: node tools/apply-rebound-patches.js --check
+      - name: Syntax (acorn, ES2022)
+        run: node tools/validate-js.js
+      - name: Unit tests
+        run: npm test
+      - name: Build extension
+        run: node extension/build.js
+      - name: web-ext lint
+        run: npx web-ext lint --source-dir extension/dist/firefox
+      - name: Validate bundled config
+        run: node tools/config-tool.js validate config/defaults.json

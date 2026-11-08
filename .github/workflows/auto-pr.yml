@@ -1,0 +1,32 @@
+# The monitor host can push agent/** and fixer/** branches (deploy key) but holds
+# no API token. This opens the PR for it. The PR title/body/labels travel in the
+# branch's tip commit (an empty commit: subject = title, body = PR body, trailer
+# "Rebound-Labels: a,b"). Merging is always a human decision (master is protected).
+name: Open PR for automation branch
+on:
+  push:
+    branches: ['agent/**', 'fixer/**']
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+jobs:
+  pr:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 1 }
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          title=$(git log -1 --format=%s | head -c 200)
+          git log -1 --format=%b | grep -v '^Rebound-Labels:' > /tmp/body.md
+          labels=$(git log -1 --format=%b | sed -n 's/^Rebound-Labels: //p' | tail -1)
+          labels=${labels:-automation}
+          for l in $(echo "$labels" | tr ',' ' '); do gh label create "$l" --force >/dev/null 2>&1 || true; done
+          if gh pr view "$GITHUB_REF_NAME" --json state -q .state 2>/dev/null | grep -q OPEN; then
+            gh pr edit "$GITHUB_REF_NAME" --body-file /tmp/body.md
+          else
+            draft=""; case "$labels" in *needs-human*) draft="--draft";; esac
+            gh pr create --base master --head "$GITHUB_REF_NAME" --title "$title" --body-file /tmp/body.md --label "$labels" $draft
+          fi

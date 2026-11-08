@@ -1,0 +1,157 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/unkarelian/rebound-twitch/config/schema.json",
+  "title": "Rebound for Twitch remote config",
+  "description": "Data only. No code, no regexes, no URLs the extension would execute or fetch. Mirrored by hand in extension/src/shared/config.js (validateConfig); tests/rebound.test.js checks both agree.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "version",
+    "minExtensionVersion",
+    "publishedAt",
+    "gql",
+    "clientId",
+    "adSignifiers",
+    "knownNonAdSignifiers",
+    "adSegmentUrlPatterns",
+    "backupPlayerTypes",
+    "defaultPlayerType",
+    "overlaySelectors"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "version": {
+      "description": "Monotonic. The extension ignores any config whose version is not greater than the one it already has (anti-rollback). A rollback is a re-sign of old content under a new version.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 2147483647
+    },
+    "minExtensionVersion": {
+      "type": "string",
+      "pattern": "^[0-9]{1,4}\\.[0-9]{1,4}\\.[0-9]{1,4}$"
+    },
+    "publishedAt": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,3})?Z$"
+    },
+    "note": {
+      "description": "Human-readable reason for this version. Never interpreted.",
+      "type": "string",
+      "maxLength": 280
+    },
+    "gql": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "playbackAccessToken",
+        "recordAdEvent"
+      ],
+      "properties": {
+        "playbackAccessToken": {
+          "$ref": "#/$defs/playbackAccessTokenQuery"
+        },
+        "recordAdEvent": {
+          "$ref": "#/$defs/persistedQuery"
+        }
+      }
+    },
+    "clientId": {
+      "type": "string",
+      "pattern": "^[a-z0-9]{20,40}$"
+    },
+    "adSignifiers": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 32,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/signifier"
+      }
+    },
+    "knownNonAdSignifiers": {
+      "type": "array",
+      "maxItems": 64,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/signifier"
+      }
+    },
+    "adSegmentUrlPatterns": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 16,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^/[A-Za-z0-9_./-]{1,63}$"
+      }
+    },
+    "backupPlayerTypes": {
+      "description": "Order matters: first clean type wins.",
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 8,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/playerType"
+      }
+    },
+    "defaultPlayerType": {
+      "$ref": "#/$defs/playerType"
+    },
+    "overlaySelectors": {
+      "description": "Exact attribute selectors only (upstream rule: no fuzzy matching, no parent walking).",
+      "type": "array",
+      "maxItems": 8,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^\\[data-[a-z-]{1,40}=\"[A-Za-z0-9_-]{1,60}\"\\]$"
+      }
+    }
+  },
+  "$defs": {
+    "persistedQuery": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sha256Hash"
+      ],
+      "properties": {
+        "sha256Hash": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      }
+    },
+    "signifier": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9:=\"_.,-]{3,100}$"
+    },
+    "playerType": {
+      "type": "string",
+      "pattern": "^[a-z_]{1,32}$"
+    },
+    "playbackAccessTokenQuery": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sha256Hash"
+      ],
+      "properties": {
+        "sha256Hash": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "operationName": {
+          "description": "Operation the persisted hash is registered under. Twitch rejects a hash sent with any other name.",
+          "type": "string",
+          "pattern": "^[A-Za-z_]{1,64}$"
+        }
+      }
+    }
+  }
+}

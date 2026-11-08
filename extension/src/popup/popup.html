@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Rebound for Twitch</title>
+<link rel="stylesheet" href="popup.css">
+</head>
+<body>
+<header>
+  <img src="../icons/icon-48.png" alt="" width="24" height="24">
+  <h1>Rebound <span class="for">for Twitch</span></h1>
+</header>
+
+<label class="toggle">
+  <input type="checkbox" id="enabled">
+  <span>Block ads</span>
+</label>
+<p class="hint" id="reload-hint" hidden>Reload your Twitch tabs to apply.</p>
+
+<dl>
+  <dt>Config</dt><dd id="config">…</dd>
+  <dt>Last verified working</dt><dd id="verified">…</dd>
+  <dt>Monitor status</dt><dd id="state">…</dd>
+  <dt>Last update check</dt><dd id="fetched">…</dd>
+</dl>
+<p class="error" id="error" hidden></p>
+
+<div class="buttons">
+  <button id="refresh">Check for updates</button>
+  <button id="report">Report broken</button>
+</div>
+
+<footer>
+  v<span id="version"></span> · Not affiliated with Twitch ·
+  <a href="../about.html" target="_blank">About &amp; credits</a>
+</footer>
+<script src="popup.js"></script>
+</body>
+</html>

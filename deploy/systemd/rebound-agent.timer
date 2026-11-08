@@ -1,0 +1,9 @@
+[Unit]
+Description=Check every 10 minutes whether the Rebound fix agent should run
+
+[Timer]
+OnBootSec=10min
+OnUnitInactiveSec=10min
+
+[Install]
+WantedBy=timers.target
