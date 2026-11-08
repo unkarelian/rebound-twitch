@@ -93,7 +93,8 @@ function prepare(id, reason) {
 
     // Evidence: newest failing run's artifacts (already redacted by the monitor).
     const lastRun = stateLib.readJson('last-run.json', null);
-    const lines = ['# What the monitor saw', '', `Trigger: ${reason}`, ''];
+    // In replays the agent must not see the scenario name anywhere (blind test).
+    const lines = ['# What the monitor saw', '', `Trigger: ${arg('--scenario') ? 'confirmed breakage (monitor)' : reason}`, ''];
     const st = stateLib.readJson('state.json', {});
     if (st.breaking) lines.push(`Breakage confirmed ${st.breaking.since}; failing checks: ${st.breaking.failures.join(', ')}. Deterministic fixers: ${JSON.stringify(st.breaking.lastFixer || 'none')}`, '');
     if (lastRun && !scenario) {
