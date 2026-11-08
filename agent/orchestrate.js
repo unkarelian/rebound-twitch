@@ -78,7 +78,8 @@ function prepare(id, reason) {
     fs.mkdirSync(path.join(work, 'inputs'), { recursive: true });
     sh('git', ['clone', '-q', '--no-hardlinks', ROOT, path.join(work, 'repo')]);
     sh('git', ['-C', path.join(work, 'repo'), 'remote', 'remove', 'origin']);
-    sh('git', ['-C', path.join(work, 'repo'), 'checkout', '-q', '-b', 'agent/' + id]);
+    // Branch name is visible to the agent: keep it neutral (no scenario name).
+    sh('git', ['-C', path.join(work, 'repo'), 'checkout', '-q', '-b', 'agent/' + id.replace(/-[a-z][a-z-]*$/, '')]);
     sh('git', ['-C', path.join(work, 'repo'), 'config', 'user.name', 'rebound-agent']);
     sh('git', ['-C', path.join(work, 'repo'), 'config', 'user.email', 'rebound-agent@users.noreply.github.com']);
 
