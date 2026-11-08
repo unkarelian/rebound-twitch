@@ -1,9 +1,9 @@
 [Unit]
-Description=Run the Rebound live monitor every 12 minutes
+Description=Run the Rebound live monitor about every 13 minutes (8 min after each ~5 min run)
 
 [Timer]
 OnBootSec=3min
-OnUnitInactiveSec=12min
+OnUnitInactiveSec=8min
 RandomizedDelaySec=60
 Persistent=false
 

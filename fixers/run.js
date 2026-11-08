@@ -101,7 +101,7 @@ function submitCandidate(kind, candidate, evidence) {
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(path.join(dir, 'config.json'), JSON.stringify(candidate, null, 2) + '\n');
     fs.writeFileSync(path.join(dir, 'evidence.json'), JSON.stringify({ kind, trigger, createdAt: new Date().toISOString(), ...evidence }, null, 2) + '\n');
-    if (dryRun) { log(`dry run: candidate ${id} written to ${dir}`); return { id, dir, pushed: false }; }
+    if (dryRun) { log(`dry run: candidate ${id} written to ${dir}`); return { id, dir, pushed: false, dryRun: true }; }
     try {
         execFileSync(path.join(ROOT, 'tools/push-candidate.sh'), [dir, 'config-candidates/' + id], { stdio: 'inherit' });
         log(`pushed candidate branch config-candidates/${id}`);
@@ -179,7 +179,7 @@ async function fixHashes(cfg) {
     log('4a live test:', JSON.stringify({ pass: lt.pass, passes: lt.passes, fails: lt.fails }));
     if (!lt.pass) return { status: 'candidate-failed-live-test', why, liveTest: lt };
     const sub = submitCandidate('hash', candidate, { why, observed: { pat: [...observed.pat], adEvent: adEv, clientIdCount: observed.clientIds.size }, ourProbe: ours, liveTest: lt });
-    return { status: sub.pushed ? 'published' : 'submit-failed', why, candidate: sub.id };
+    return { status: sub.pushed ? 'submitted' : sub.dryRun ? 'dry-run' : 'submit-failed', why, candidate: sub.id };
 }
 
 // ------------------------------------------------------------------ 4b
