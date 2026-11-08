@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
-  "version": 5,
+  "version": 6,
   "minExtensionVersion": "0.1.0",
-  "publishedAt": "2026-11-08T20:38:42Z",
-  "note": "Rollback to the content of v2",
+  "publishedAt": "2026-11-08T23:13:24Z",
+  "note": "Player-type order (4c): embed,site,popout,mobile_web",
   "gql": {
     "playbackAccessToken": {
       "operationName": "PlaybackAccessToken",
@@ -33,10 +33,10 @@
     "/processing"
   ],
   "backupPlayerTypes": [
+    "embed",
     "site",
     "popout",
-    "mobile_web",
-    "embed"
+    "mobile_web"
   ],
   "defaultPlayerType": "popout",
   "overlaySelectors": [
