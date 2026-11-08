@@ -147,7 +147,13 @@ async function main() {
         log(`run verdict ${summary.runVerdict}; consecutive FAIL runs: ${state.consecutiveFails}${state.breaking ? '; BREAKAGE since ' + state.breaking.since : ''}`);
         if (newlyConfirmed && !process.env.REBOUND_NO_TRIGGER) {
             log('confirmed breakage -> starting fixers');
-            spawn(process.execPath, [path.join(ROOT, 'fixers/run.js'), '--trigger', 'breakage'], { detached: true, stdio: 'ignore' }).unref();
+            // Under systemd a oneshot unit's cgroup dies with this process, so a
+            // detached child would be killed; hand off to the fixers unit instead.
+            if (process.env.INVOCATION_ID) {
+                try { execFileSync('systemctl', ['--user', 'start', '--no-block', 'rebound-fixers-breakage.service']); } catch (e) { log('could not start fixers unit:', String(e).slice(0, 200)); }
+            } else {
+                spawn(process.execPath, [path.join(ROOT, 'fixers/run.js'), '--trigger', 'breakage'], { detached: true, stdio: 'ignore' }).unref();
+            }
         }
         if (process.env.REBOUND_PUBLISH_STATUS === '1') {
             try { execFileSync(path.join(ROOT, 'tools/publish-status.sh'), [path.join(stateLib.STATE_DIR, 'status.json')], { stdio: 'pipe' }); } catch (e) { log('status publish failed:', String(e.stderr || e).slice(0, 300)); }
