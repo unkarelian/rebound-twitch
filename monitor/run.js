@@ -23,6 +23,7 @@ const { evaluate } = require('./lib/evaluate.js');
 const { saveArtifacts } = require('./lib/artifacts.js');
 const { liveChannels, pickChannels, probeAds } = require('./lib/twitch.js');
 const stateLib = require('./lib/state.js');
+const schedule = require('./lib/schedule.js');
 const { verifyConfig } = require('../extension/src/shared/config.js');
 
 const ROOT = path.resolve(__dirname, '..');
@@ -78,6 +79,22 @@ async function main() {
     const fault = flag('--fault');
     const noState = flag('--no-state') || !!candidatePath;
     const runId = new Date().toISOString().replace(/[:.]/g, '-') + (candidatePath ? '-candidate' : fault ? '-fault' : '');
+    // --scheduled (systemd timer): full browser runs only when due; see lib/schedule.js.
+    if (flag('--scheduled') && !candidatePath && !fault) {
+        const due = schedule.shouldRunFull('monitor');
+        if (!due.run) {
+            const probe = await cheapProbe();
+            stateLib.writeJson('probe.json', probe);
+            if (probe.ok) {
+                log(`skip full run (${due.why}); cheap probe ok on ${probe.channel}`);
+                writeStatus();
+                return;
+            }
+            log(`cheap probe FAILED (${probe.error}) -> full browser run now`);
+        } else {
+            log('full run: ' + due.why);
+        }
+    }
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'rebound-mon-'));
 
     let config, source;
@@ -142,6 +159,8 @@ async function main() {
     if (!noState) {
         if (!fault) stateLib.writeJson('live-config.json', config);
         const { state, newlyConfirmed } = stateLib.update(run);
+        schedule.markFullRun('monitor', run.at);
+        if (summary.runVerdict === 'PASS') stateLib.writeJson('probe.json', { ok: true, at: run.at, via: 'full run' });
         stateLib.writeJson('last-run.json', run);
         mergeObserved(results);
         log(`run verdict ${summary.runVerdict}; consecutive FAIL runs: ${state.consecutiveFails}${state.breaking ? '; BREAKAGE since ' + state.breaking.since : ''}`);
@@ -155,9 +174,7 @@ async function main() {
                 spawn(process.execPath, [path.join(ROOT, 'fixers/run.js'), '--trigger', 'breakage'], { detached: true, stdio: 'ignore' }).unref();
             }
         }
-        if (process.env.REBOUND_PUBLISH_STATUS === '1') {
-            try { execFileSync(path.join(ROOT, 'tools/publish-status.sh'), [path.join(stateLib.STATE_DIR, 'status.json')], { stdio: 'pipe' }); } catch (e) { log('status publish failed:', String(e.stderr || e).slice(0, 300)); }
-        }
+        publishStatus();
     } else {
         log(`run verdict ${summary.runVerdict} (state untouched)`);
     }
@@ -168,6 +185,32 @@ async function main() {
 }
 
 // { operationName: [hash...] } from persisted queries, plus sha256(query) for raw ones.
+function publishStatus() {
+    if (process.env.REBOUND_PUBLISH_STATUS !== '1') return;
+    try { execFileSync(path.join(ROOT, 'tools/publish-status.sh'), [path.join(stateLib.STATE_DIR, 'status.json')], { stdio: 'pipe' }); } catch (e) { log('status publish failed:', String(e.stderr || e).slice(0, 300)); }
+}
+
+function writeStatus() {
+    stateLib.writeJson('status.json', stateLib.publicStatus(stateLib.readJson('state.json', {})));
+    publishStatus();
+}
+
+// Browser-free check between full runs: does the live config's PAT operation +
+// hash + client ID still return a token, and does the playlist load? Catches the
+// fully automatable breakage class (rotations) within minutes even when stable.
+async function cheapProbe() {
+    const at = new Date().toISOString();
+    try {
+        const { config } = await liveConfig();
+        const pool = (await liveChannels()).filter((c) => c.viewers >= 1000);
+        const ch = pool[Math.floor(Math.random() * Math.min(15, pool.length))];
+        const r = await probeAds(ch.login, { hash: config.gql.playbackAccessToken.sha256Hash, operationName: config.gql.playbackAccessToken.operationName || 'PlaybackAccessToken', signifiers: config.adSignifiers, polls: 1, intervalMs: 0 });
+        return { ok: r.tokenOk && !r.error, at, channel: ch.login, configVersion: config.version, error: r.error || null };
+    } catch (e) {
+        return { ok: false, at, error: String(e && e.message || e).slice(0, 200) };
+    }
+}
+
 function dedupeHashes(gql, rawQueries) {
     const m = {};
     for (const g of gql || []) { (m[g.op] = m[g.op] || new Set()).add(g.hash); }

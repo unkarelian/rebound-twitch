@@ -78,6 +78,7 @@ function publicStatus(s) {
         lastPassAt: s.lastPassAt,
         updatedAt: new Date().toISOString(),
         breakingSince: s.breaking ? s.breaking.since : null,
+        lastProbe: (() => { const pr = readJson('probe.json', null); return pr ? { ok: !!pr.ok, at: pr.at } : null; })(),
         lastResolved: s.lastResolved ? { since: s.lastResolved.since, resolvedAt: s.lastResolved.resolvedAt, minutesToFix: s.lastResolved.minutesToFix } : null,
         last24h: {
             runs: recent.length,

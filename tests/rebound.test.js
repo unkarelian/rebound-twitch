@@ -287,13 +287,14 @@ test('config-tool publish signs with next version and output verifies; rollback 
     const cand = cfgWith((c) => { c.gql.playbackAccessToken.sha256Hash = HASH_B; });
     fs.writeFileSync(path.join(tmp, 'cand.json'), JSON.stringify(cand));
     run('publish', path.join(tmp, 'cand.json'), '--out', path.join(tmp, 'live'), '--note', 'test');
-    assert.match(run('verify', path.join(tmp, 'live/config.json')), /OK: config v2/);
+    const v0 = DEFAULTS.version;
+    assert.match(run('verify', path.join(tmp, 'live/config.json')), new RegExp('OK: config v' + (v0 + 1)));
     run('publish', path.join(tmp, 'cand.json'), '--out', path.join(tmp, 'live'));
-    run('rollback', '2', '--out', path.join(tmp, 'live'));
+    run('rollback', String(v0 + 1), '--out', path.join(tmp, 'live'));
     const live = JSON.parse(fs.readFileSync(path.join(tmp, 'live/config.json'), 'utf8'));
-    assert.equal(live.version, 4);
-    assert.match(live.note, /v2/);
-    assert.match(run('verify', path.join(tmp, 'live/config.json')), /OK: config v4/);
+    assert.equal(live.version, v0 + 3);
+    assert.match(live.note, new RegExp('v' + (v0 + 1)));
+    assert.match(run('verify', path.join(tmp, 'live/config.json')), new RegExp('OK: config v' + (v0 + 3)));
     fs.rmSync(tmp, { recursive: true, force: true });
 });
 
@@ -374,4 +375,35 @@ test('verdict: no failures but no ads in control is INCONCLUSIVE, never PASS', (
     assert.equal(evaluate({ control: { observed: { playlists: [] } }, test: leaky, probe: null }).verdict, 'FAIL(A)');
     const stale = { ...okTest, monitorLog: [...okTest.monitorLog, { kind: 'gql', status: 200, errors: ['PersistedQueryNotFound'] }] };
     assert.equal(evaluate({ control: null, test: stale, probe: null }).verdict, 'FAIL(D)');
+});
+
+// ---------------------------------------------------------------- adaptive schedule
+test('schedule: stable -> full runs every 12h; unstable -> every time', () => {
+    const tmp = fs.mkdtempSync(path.join(require('os').tmpdir(), 'rebound-sched-'));
+    const script = `
+        const s = require(${JSON.stringify(path.join(ROOT, 'monitor/lib/schedule.js'))});
+        const st = require(${JSON.stringify(path.join(ROOT, 'monitor/lib/state.js'))});
+        const now = Date.parse('2026-11-10T12:00:00Z');
+        const out = {};
+        const hist = (v) => { for (let i = 0; i < 6; i++) st.appendHistory({ runVerdict: v }); };
+        st.writeJson('state.json', { breaking: null }); hist('PASS');
+        st.writeJson('schedule.json', { monitor: '2026-11-10T06:00:00Z' });
+        out.stableRecent = s.shouldRunFull('monitor', now).run;
+        st.writeJson('schedule.json', { monitor: '2026-11-09T23:00:00Z' });
+        out.stableDue = s.shouldRunFull('monitor', now).run;
+        st.writeJson('schedule.json', { monitor: '2026-11-10T11:50:00Z' });
+        st.writeJson('state.json', { breaking: { since: '2026-11-10T11:00:00Z' } });
+        out.breaking = s.shouldRunFull('monitor', now).run;
+        st.writeJson('state.json', { breaking: null, lastResolved: { resolvedAt: '2026-11-10T02:00:00Z' } });
+        out.recentlyResolved = s.shouldRunFull('monitor', now).run;
+        st.writeJson('state.json', { breaking: null });
+        st.writeJson('probe.json', { ok: false, error: 'PersistedQueryNotFound' });
+        out.probeFailed = s.shouldRunFull('monitor', now).run;
+        st.writeJson('probe.json', { ok: true });
+        st.appendHistory({ runVerdict: 'DEGRADED' });
+        out.degraded = s.shouldRunFull('monitor', now).run;
+        console.log(JSON.stringify(out));`;
+    const out = JSON.parse(execFileSync(process.execPath, ['-e', script], { env: { ...process.env, REBOUND_STATE_DIR: tmp }, encoding: 'utf8' }));
+    fs.rmSync(tmp, { recursive: true, force: true });
+    assert.deepEqual(out, { stableRecent: false, stableDue: true, breaking: true, recentlyResolved: true, probeFailed: true, degraded: true });
 });

@@ -258,6 +258,11 @@ async function main() {
         fs.writeFileSync(lockFile, String(process.pid));
     }
     try {
+        if (flag('--scheduled')) {
+            const due = require('../monitor/lib/schedule.js').shouldRunFull('fixers');
+            if (!due.run) { log('skip: ' + due.why); return; }
+            log('run: ' + due.why);
+        }
         const cfg = currentLiveConfig();
         log(`trigger=${trigger} config v${cfg.version}`);
         const report = { at: new Date().toISOString(), trigger, configVersion: cfg.version };
@@ -272,6 +277,7 @@ async function main() {
             stateLib.writeJson('state.json', st);
         }
         stateLib.writeJson('last-fixers.json', report);
+        if (flag('--scheduled')) require('../monitor/lib/schedule.js').markFullRun('fixers', report.at);
         console.log(JSON.stringify(report, null, 2));
     } finally {
         fs.rmSync(lockFile, { force: true });

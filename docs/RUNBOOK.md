@@ -23,6 +23,10 @@ cat ~/Projects/rebound-twitch/monitor/state/state.json
 tail -5 ~/Projects/rebound-twitch/monitor/state/history.jsonl
 ```
 
+## Cadence
+
+When stable, the browser checks (monitor and fixers) run **twice a day**. Between them, a cheap probe runs every ~8 minutes. Any failure, open breakage or fix in the last 24h switches to full checks about every 13 minutes, until things have been clean for 24h. `journalctl --user -u rebound-monitor -n 5` shows which mode it's in ("skip full run (stable; next full monitor run due ...)" or "full run: unstable: ..."). To force a full run now: `systemctl --user start rebound-monitor.service` won't do it while stable, so run `node monitor/run.js --channels 3` directly. To change the interval, put `REBOUND_STABLE_INTERVAL_H=6` in `~/.config/rebound-twitch/monitor.env`.
+
 ## Approve things
 
 - **Agent PR** (label `agent`): the top of the PR has an independent re-check (live verdicts per channel, tests, lint). If it's green and the diff makes sense, merge. Users don't get a code change until you also run **Actions → Release extension** (the `release` environment asks you to approve). Use the userscript in the GitHub Release as a stopgap while store review is pending.

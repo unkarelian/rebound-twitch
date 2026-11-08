@@ -7,7 +7,7 @@ A Twitch ad blocker that **repairs itself fast** when Twitch changes something. 
 - **Signed remote config.** The values Twitch rotates (GQL operation and hash, client ID, ad markers,
   backup player types, overlay selectors) live in a small Ed25519-signed JSON file. The extension
   rejects anything unsigned, altered, malformed or older than what it has. It's data only, never code.
-- **A live monitor.** Every 12 minutes, real Firefox watches 3 live channels twice: once without the
+- **A live monitor.** On a home server, real Firefox watches 3 live channels twice (every ~13 minutes while anything is off, twice a day once stable, with a cheap browser-free probe every ~8 minutes in between): once without the
   extension (does Twitch serve ads right now?) and once with it. It checks that no ad segments get
   through, content plays, no ad UI shows and nothing errors. Status: [`status.json`](https://raw.githubusercontent.com/unkarelian/rebound-twitch/status/status.json).
 - **Deterministic fixers.** A stale hash or client ID gets fixed, re-verified live and published
