@@ -1,13 +1,13 @@
 {
   "schemaVersion": 1,
-  "version": 2,
+  "version": 4,
   "minExtensionVersion": "0.1.0",
-  "publishedAt": "2026-11-08T19:49:21Z",
-  "note": "Initial publication: identical to bundled defaults (vaft 68.5.7 values).",
+  "publishedAt": "2026-11-08T20:28:24Z",
+  "note": "Auto-fix (4a): PlaybackAccessToken PlaybackAccessToken/ea149d44→PlaybackAccessToken_Template/34be3135",
   "gql": {
     "playbackAccessToken": {
-      "operationName": "PlaybackAccessToken",
-      "sha256Hash": "ed230aa1e33e07eebb8928504583da78a5173989fadfb1ac94be06a04f3cdbe9"
+      "operationName": "PlaybackAccessToken_Template",
+      "sha256Hash": "34be31355bee5d822e8303d748e0f53d6ec9ae57fbaa587c131a96998ab718d9"
     },
     "recordAdEvent": {
       "sha256Hash": "7e6c69e6eb59f8ccb97ab73686f3d8b7d85a72a0298745ccd8bfc68e4054ca5b"
