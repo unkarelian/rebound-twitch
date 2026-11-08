@@ -83,7 +83,7 @@ function prepare(id, reason) {
         // what was broken. (Real runs get the full history.)
         sh('git', ['clone', '-q', '--depth', '1', 'file://' + ROOT, path.join(work, 'repo')]);
         sh('git', ['-C', path.join(work, 'repo'), 'rm', '-rq', 'agent/scenarios']);
-        sh('git', ['-C', path.join(work, 'repo'), '-c', 'user.name=rebound', '-c', 'user.email=rebound@users.noreply.github.com', 'commit', '-q', '--amend', '--no-edit']);
+        sh('git', ['-C', path.join(work, 'repo'), '-c', 'user.name=rebound', '-c', 'user.email=rebound@users.noreply.github.com', 'commit', '-q', '--amend', '-m', 'Rebound for Twitch (snapshot)']);
         sh('git', ['-C', path.join(work, 'repo'), 'reflog', 'expire', '--expire=now', '--all']);
         sh('git', ['-C', path.join(work, 'repo'), 'gc', '-q', '--prune=now']);
     } else {
