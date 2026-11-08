@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "version": 5,
+  "minExtensionVersion": "0.1.0",
+  "publishedAt": "2026-11-08T20:38:42Z",
+  "note": "Rollback to the content of v2",
+  "gql": {
+    "playbackAccessToken": {
+      "operationName": "PlaybackAccessToken",
+      "sha256Hash": "ed230aa1e33e07eebb8928504583da78a5173989fadfb1ac94be06a04f3cdbe9"
+    },
+    "recordAdEvent": {
+      "sha256Hash": "7e6c69e6eb59f8ccb97ab73686f3d8b7d85a72a0298745ccd8bfc68e4054ca5b"
+    }
+  },
+  "clientId": "kimne78kx3ncx6brgo4mv6wki5h1ko",
+  "adSignifiers": [
+    "stitched-ad",
+    "EXT-X-CUE-OUT",
+    "twitch-stitched",
+    "EXT-X-DATERANGE:CLASS=\"twitch-maf-ad\"",
+    "EXT-X-DATERANGE:CLASS=\"twitch-trigger\""
+  ],
+  "knownNonAdSignifiers": [
+    "twitch-session",
+    "twitch-stream-source",
+    "twitch-ad-quartile",
+    "twitch-assignment"
+  ],
+  "adSegmentUrlPatterns": [
+    "/adsquared/",
+    "/_404/",
+    "/processing"
+  ],
+  "backupPlayerTypes": [
+    "site",
+    "popout",
+    "mobile_web",
+    "embed"
+  ],
+  "defaultPlayerType": "popout",
+  "overlaySelectors": [
+    "[data-test-selector=\"sda-wrapper\"]"
+  ]
+}
