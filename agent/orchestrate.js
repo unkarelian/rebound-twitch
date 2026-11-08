@@ -76,7 +76,19 @@ function claudeToken() {
 function prepare(id, reason) {
     const work = path.join(WORK_ROOT, id);
     fs.mkdirSync(path.join(work, 'inputs'), { recursive: true });
-    sh('git', ['clone', '-q', '--no-hardlinks', ROOT, path.join(work, 'repo')]);
+    const blind = !!arg('--scenario');
+    if (blind) {
+        // Blind replay: a single-commit clone with the scenario definitions removed
+        // and that root commit rewritten, so neither the tree nor history reveals
+        // what was broken. (Real runs get the full history.)
+        sh('git', ['clone', '-q', '--depth', '1', 'file://' + ROOT, path.join(work, 'repo')]);
+        sh('git', ['-C', path.join(work, 'repo'), 'rm', '-rq', 'agent/scenarios']);
+        sh('git', ['-C', path.join(work, 'repo'), '-c', 'user.name=rebound', '-c', 'user.email=rebound@users.noreply.github.com', 'commit', '-q', '--amend', '--no-edit']);
+        sh('git', ['-C', path.join(work, 'repo'), 'reflog', 'expire', '--expire=now', '--all']);
+        sh('git', ['-C', path.join(work, 'repo'), 'gc', '-q', '--prune=now']);
+    } else {
+        sh('git', ['clone', '-q', '--no-hardlinks', ROOT, path.join(work, 'repo')]);
+    }
     sh('git', ['-C', path.join(work, 'repo'), 'remote', 'remove', 'origin']);
     // Branch name is visible to the agent: keep it neutral (no scenario name).
     sh('git', ['-C', path.join(work, 'repo'), 'checkout', '-q', '-b', 'agent/' + id.replace(/-[a-z][a-z-]*$/, '')]);

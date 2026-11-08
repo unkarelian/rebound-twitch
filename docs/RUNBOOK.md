@@ -91,7 +91,7 @@ node monitor/run.js --channel somechannel --save-all         # keep artifacts ev
 node monitor/run.js --fault --channels 2 --no-state          # injected wrong hash: should FAIL(D)
 node fixers/run.js --dry-run                                 # fixers, without pushing candidates
 node agent/orchestrate.js --force --reason "..."             # start the agent now
-node agent/orchestrate.js --scenario worker-serialization --no-push   # replay a historical breakage
+node agent/orchestrate.js --scenario <name> --no-push      # replay a historical breakage (names: ls agent/scenarios)
 ```
 
 ## Reading a monitor verdict
