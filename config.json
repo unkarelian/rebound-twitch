@@ -1,13 +1,13 @@
 {
   "schemaVersion": 1,
-  "version": 3,
+  "version": 4,
   "minExtensionVersion": "0.1.0",
-  "publishedAt": "2026-11-08T19:55:56Z",
-  "note": "ACCEPTANCE TEST: simulated hash rotation (stale PlaybackAccessToken hash). Expect auto-fix.",
+  "publishedAt": "2026-11-08T20:28:24Z",
+  "note": "Auto-fix (4a): PlaybackAccessToken PlaybackAccessToken/ea149d44→PlaybackAccessToken_Template/34be3135",
   "gql": {
     "playbackAccessToken": {
-      "operationName": "PlaybackAccessToken",
-      "sha256Hash": "ea149d4443f140133b50cd053342855df3f293b158cf677ee0d37be3bcf252ee"
+      "operationName": "PlaybackAccessToken_Template",
+      "sha256Hash": "34be31355bee5d822e8303d748e0f53d6ec9ae57fbaa587c131a96998ab718d9"
     },
     "recordAdEvent": {
       "sha256Hash": "7e6c69e6eb59f8ccb97ab73686f3d8b7d85a72a0298745ccd8bfc68e4054ca5b"
