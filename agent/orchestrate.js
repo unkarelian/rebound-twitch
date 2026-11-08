@@ -144,6 +144,7 @@ function runAgent(work, id) {
     const r = docker(['run', '--rm', '--name', name, ...LIMITS, '-v', work + ':/work', '-e', 'CLAUDE_CODE_OAUTH_TOKEN=' + token, '-e', 'IS_SANDBOX=1', IMAGE, 'bash', '-lc', cmd], (BUDGET_MIN + 10) * 60000);
     if (r.timedOut) docker(['kill', name], 30000);
     log('agent container exit', r.code, r.timedOut ? '(timed out)' : '');
+    if (r.code !== 0 && !r.timedOut && !fs.existsSync(path.join(work, 'agent-transcript.jsonl'))) log('agent did not start:', (r.stderr || '').slice(-500));
     return r;
 }
 
@@ -159,7 +160,8 @@ function verify(work) {
     ].join('\n');
     log('verifying in a clean container');
     docker(['run', '--rm', ...LIMITS, '-v', work + ':/work', IMAGE, 'bash', '-lc', script], 40 * 60000);
-    const codes = JSON.parse(fs.readFileSync(path.join(work, 'verify.json'), 'utf8'));
+    let codes;
+    try { codes = JSON.parse(fs.readFileSync(path.join(work, 'verify.json'), 'utf8')); } catch { codes = { patches: -1, syntax: -1, tests: -1, lint: -1, live: -1, error: 'verification container did not produce verify.json' }; }
     let live = null;
     try { live = JSON.parse(fs.readFileSync(path.join(work, 'verify-live.json'), 'utf8')); } catch {}
     const results = live ? live.results : [];
