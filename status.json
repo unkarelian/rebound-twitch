@@ -1,0 +1,21 @@
+{
+  "state": "PASS",
+  "lastPassAt": "2026-11-21T17:00:06.017Z",
+  "updatedAt": "2026-11-21T17:00:06.018Z",
+  "breakingSince": null,
+  "lastProbe": {
+    "ok": true,
+    "at": "2026-11-21T16:46:07.097Z"
+  },
+  "lastResolved": {
+    "since": "2026-11-08T20:22:06.918Z",
+    "resolvedAt": "2026-11-08T20:36:06.266Z",
+    "minutesToFix": 14
+  },
+  "last24h": {
+    "runs": 96,
+    "pass": 82,
+    "fail": 2,
+    "inconclusiveRate": 0.06
+  }
+}
