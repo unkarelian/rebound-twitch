@@ -331,7 +331,7 @@ test('publish gate: signifier change needs 5 channels with playback', () => {
 
 test('publish gate: player types may only be reordered, whatever the kind', () => {
     const live = cfgWith(() => {});
-    const reorder = cfgWith((c) => { c.backupPlayerTypes = ['embed', 'site', 'popout', 'mobile_web']; });
+    const reorder = cfgWith((c) => { c.backupPlayerTypes = [...c.backupPlayerTypes].reverse(); });
     const add = cfgWith((c) => { c.backupPlayerTypes = ['autoplay', 'site', 'popout', 'mobile_web', 'embed']; });
     assert.equal(decide(reorder, { kind: 'playertypes', liveTest: passRun(5) }, live).decision, 'auto');
     assert.equal(decide(add, { kind: 'playertypes', liveTest: passRun(5) }, live).decision, 'reject');

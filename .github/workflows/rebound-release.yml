@@ -1,5 +1,5 @@
 # Code releases, with nobody in the loop. Started by the workflows that merge
-# into master (verified agent fixes, upstream syncs, config syncs), or by hand.
+# into master (verified agent fixes, upstream syncs), or by hand.
 #
 # - Skips when nothing a user runs has changed since the last release.
 # - The version is <major>.<minor> from package.json plus the commit count of
