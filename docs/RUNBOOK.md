@@ -7,6 +7,7 @@
 | Repo | `github.com/unkarelian/rebound-twitch` (fork of `ryanbr/TwitchAdSolutions`, default branch `master`, protected) |
 | Live signed config | branch `live`: `config.json`, `config.json.sig`, `history/vN.json(.sig)` |
 | Public status | branch `status`: `status.json` (force-pushed by the monitor) |
+| Userscript (updates itself) | `https://github.com/unkarelian/rebound-twitch/releases/latest/download/rebound-vaft.user.js` |
 | Firefox update manifest | branch `updates`: `updates.json` (force-pushed by the release workflow) |
 | Monitor, fixers, agent | `kurvaz@home-server:~/Projects/rebound-twitch`, user systemd timers `rebound-*` |
 | Monitor state | `~/Projects/rebound-twitch/monitor/state/` (`state.json`, `history.jsonl`, `observed.json`, `last-run.json`) |
