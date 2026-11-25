@@ -95,6 +95,7 @@ async function main() {
             log('full run: ' + due.why);
         }
     }
+    await ensureBrowser();
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'rebound-mon-'));
 
     let config, source;
@@ -146,7 +147,8 @@ async function main() {
         r.observed = control.observed ? { hashes: dedupeHashes(control.observed.gql, control.observed.rawQueries), clientIds: control.observed.clientIds, adClasses: adClasses(control.observed.playlists) } : null;
         if (ev.verdict !== 'PASS' && ev.verdict !== 'INCONCLUSIVE' || flag('--save-all')) {
             const dir = saveArtifacts(runDir, { channel, control, test, probe, verdict: ev, versions: { extension: require('../package.json').version, config: config.version, configSource: source, browser: test.browserVersion } });
-            fs.copyFileSync(path.join(tmp, channel.login + '.png'), path.join(dir, 'screenshot.png'));
+            const shot = path.join(tmp, channel.login + '.png');
+            if (fs.existsSync(shot)) fs.copyFileSync(shot, path.join(dir, 'screenshot.png'));
             r.artifacts = path.relative(ROOT, dir);
         }
         log(`[${channel.login}] ${ev.verdict}  A=${JSON.stringify(ev.details.A)} B=${ev.details.B.ok ? 'ok' : ev.details.B.reason} C=${ev.details.C.hits} D=${JSON.stringify(ev.details.D)} control=${JSON.stringify(ev.details.control)}`);
@@ -182,6 +184,18 @@ async function main() {
     if (out) fs.writeFileSync(out, JSON.stringify(run, null, 2));
     process.stdout.write(JSON.stringify({ runId, summary, results: results.map((r) => ({ channel: r.channel.login, verdict: r.verdict, artifacts: r.artifacts })) }) + '\n');
     fs.rmSync(tmp, { recursive: true, force: true });
+}
+
+// The monitor's own browser failing to start is not a Twitch breakage: it must
+// not be recorded as FAIL (that would send the agent after a healthy extension).
+// Repair it (re-download the pinned Firefox) or stop before touching any state.
+async function ensureBrowser() {
+    const puppeteer = require('puppeteer');
+    const tryLaunch = async () => { const b = await puppeteer.launch({ browser: 'firefox', headless: true }); await b.close(); };
+    try { await tryLaunch(); return; } catch (e) { log('browser does not start (' + String(e.message || e).split('\n')[0].slice(0, 160) + '); reinstalling Firefox'); }
+    execFileSync(path.join(ROOT, 'node_modules/.bin/puppeteer'), ['browsers', 'install', 'firefox'], { cwd: ROOT, stdio: 'pipe', timeout: 15 * 60000 });
+    await tryLaunch();
+    log('browser repaired');
 }
 
 // { operationName: [hash...] } from persisted queries, plus sha256(query) for raw ones.

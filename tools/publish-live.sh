@@ -9,8 +9,9 @@
 # 2. Copies its history/ into config/published/ so version numbers never repeat.
 # 3. Signs the next version with config-tool.js and commits config.json(.sig) +
 #    history/vN.json(.sig) to `live`.
-# 4. Opens an informational PR syncing config/published/ and config/defaults.json
-#    into master (the next extension release bundles it).
+# 4. Syncs config/published/ and config/defaults.json into master through a PR
+#    it merges itself, then starts a release so the bundled default (and the
+#    userscript, which has no remote config) carries the new version.
 set -euo pipefail
 mode=$1 arg=$2
 : "${REBOUND_SIGNING_KEY:?signing key missing - is this job in a config-* environment?}"
@@ -48,7 +49,7 @@ git -C live-branch commit -qm "config v$ver ($mode)"
 git -C live-branch push -q origin live
 echo "version=$ver" >> "${GITHUB_OUTPUT:-/dev/null}"
 
-# Informational sync PR into master.
+# Sync into master. The config is already live; this only records it.
 sync="config-sync/v$ver"
 git checkout -q -b "$sync" origin/master
 cp "live-branch/history/v$ver.json" "live-branch/history/v$ver.json.sig" config/published/
@@ -57,4 +58,6 @@ git add config/published config/defaults.json
 git commit -qm "config: sync published v$ver ($mode)"
 git push -q origin "$sync"
 gh pr create --base master --head "$sync" --title "config: sync published v$ver" \
-  --body "Config v$ver is **already live** ($mode). This PR only records it in \`config/published/\` and makes it the bundled default for the next extension release. Merge at leisure." || true
+  --body "Config v$ver is **already live** ($mode). This records it in \`config/published/\` and makes it the bundled default." || true
+if gh pr merge "$sync" --merge; then git push -q origin --delete "$sync" || true; else echo "sync PR not merged; the next publish will supersede it"; fi
+gh workflow run rebound-release.yml --ref master || true

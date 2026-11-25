@@ -16,6 +16,11 @@ const { validateConfig } = require('./src/shared/config.js');
 const ROOT = path.resolve(__dirname, '..');
 const SRC = path.join(__dirname, 'src');
 const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
+// Releases set the version from the commit count (see rebound-release.yml).
+if (/^\d+(\.\d+){1,3}$/.test(process.env.REBOUND_VERSION || '')) pkg.version = process.env.REBOUND_VERSION;
+const GECKO_ID = 'rebound-twitch@unkarelian.github.io';
+// Self-distributed builds update themselves from here; the release workflow writes it.
+const UPDATE_URL = 'https://raw.githubusercontent.com/unkarelian/rebound-twitch/updates/updates.json';
 
 function arg(name, def) {
     const i = process.argv.indexOf(name);
@@ -72,7 +77,8 @@ function manifest(t) {
             ...base,
             browser_specific_settings: {
                 gecko: {
-                    id: 'rebound-twitch@unkarelian.github.io',
+                    id: GECKO_ID,
+                    update_url: UPDATE_URL,
                     strict_min_version: '140.0', // Ed25519 WebCrypto (129+); data_collection_permissions (140+, ESR)
                     data_collection_permissions: { required: ['none'] },
                 },

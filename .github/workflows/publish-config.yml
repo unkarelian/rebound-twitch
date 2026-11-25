@@ -1,9 +1,7 @@
-# Signs and publishes a config candidate pushed by the fixers (or a human) to a
-# config-candidates/** branch. tools/publish-gate.js decides auto vs. human:
-#   auto  -> job runs in environment `config-auto`  (no reviewers)
-#   human -> job runs in environment `config-human` (required reviewer: one click
-#            "Approve and deploy" on github.com or the mobile app)
-# REBOUND_SIGNING_KEY is an *environment* secret of those two environments only.
+# Signs and publishes a config candidate pushed by the fixers to a
+# config-candidates/** branch. tools/publish-gate.js decides: "auto" is signed
+# and published at once, "reject" is dropped. Nothing waits for approval.
+# REBOUND_SIGNING_KEY is an *environment* secret of `config-auto`.
 name: Publish config
 on:
   push:
@@ -16,6 +14,7 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  actions: write
 concurrency:
   group: publish-config
   cancel-in-progress: false
@@ -49,9 +48,9 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
   publish:
     needs: gate
-    if: needs.gate.outputs.decision == 'auto' || needs.gate.outputs.decision == 'human'
+    if: needs.gate.outputs.decision == 'auto'
     runs-on: ubuntu-latest
-    environment: ${{ needs.gate.outputs.decision == 'auto' && 'config-auto' || 'config-human' }}
+    environment: config-auto
     steps:
       - uses: actions/checkout@v4
         with: { ref: master, fetch-depth: 0 }
@@ -68,4 +67,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: tools/publish-live.sh publish /tmp/cand/config.json
       - name: Delete candidate branch
+        run: git push -q origin --delete "${{ needs.gate.outputs.ref }}" || true
+  drop:
+    needs: gate
+    if: needs.gate.outputs.decision != 'auto'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: master, fetch-depth: 1 }
+      - name: Delete rejected candidate branch
         run: git push -q origin --delete "${{ needs.gate.outputs.ref }}" || true

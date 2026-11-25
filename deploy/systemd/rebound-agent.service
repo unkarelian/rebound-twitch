@@ -1,5 +1,5 @@
 [Unit]
-Description=Rebound agent fix loop (acts only on breakages unresolved after 30 min)
+Description=Rebound agent fix loop (breakages unresolved after 30 min; weekly upstream sync)
 After=network-online.target docker.service
 
 [Service]
@@ -7,4 +7,4 @@ Type=oneshot
 WorkingDirectory=%h/Projects/rebound-twitch
 EnvironmentFile=-%h/.config/rebound-twitch/monitor.env
 ExecStart=/bin/bash -lc 'exec node agent/orchestrate.js'
-TimeoutStartSec=3h
+TimeoutStartSec=5h

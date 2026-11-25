@@ -308,37 +308,48 @@ test('publish gate: hash-only change with 3-channel PASS auto-publishes', () => 
     assert.equal(decide(cand, { kind: 'hash', liveTest: passRun(3) }, live).decision, 'auto');
 });
 
-test('publish gate: "hash" candidate that also touches signifiers needs a human', () => {
+test('publish gate: a diff wider than its kind is held to the widest rule (5 channels)', () => {
     const live = cfgWith(() => {});
-    const cand = cfgWith((c) => { c.gql.playbackAccessToken.sha256Hash = HASH_B; c.adSignifiers = ['x-y-z']; });
+    const cand = cfgWith((c) => { c.gql.playbackAccessToken.sha256Hash = HASH_B; c.adSignifiers = [...c.adSignifiers, 'x-y-z']; });
     const d = decide(cand, { kind: 'hash', liveTest: passRun(3) }, live);
-    assert.equal(d.decision, 'human');
-    assert.match(d.reasons.join(), /outside hash scope: adSignifiers/);
+    assert.equal(d.decision, 'reject');
+    assert.match(d.reasons.join(), /need 5/);
+    assert.equal(decide(cand, { kind: 'hash', liveTest: passRun(5) }, live).decision, 'auto');
 });
 
 test('publish gate: signifier change needs 5 channels with playback', () => {
     const live = cfgWith(() => {});
     const cand = cfgWith((c) => { c.adSignifiers = [...c.adSignifiers, 'EXT-X-DATERANGE:CLASS="twitch-new-ad"']; });
-    assert.equal(decide(cand, { kind: 'signifiers', liveTest: passRun(3) }, live).decision, 'human');
+    assert.equal(decide(cand, { kind: 'signifiers', liveTest: passRun(3) }, live).decision, 'reject');
     assert.equal(decide(cand, { kind: 'signifiers', liveTest: passRun(5) }, live).decision, 'auto');
     const noPlayback = passRun(5); noPlayback.run.results[2].B.ok = false;
-    assert.equal(decide(cand, { kind: 'signifiers', liveTest: noPlayback }, live).decision, 'human');
+    assert.equal(decide(cand, { kind: 'signifiers', liveTest: noPlayback }, live).decision, 'reject');
+    const gutted = cfgWith((c) => { c.adSignifiers = c.adSignifiers.slice(2); });
+    assert.ok(live.adSignifiers.length >= 3);
+    assert.equal(decide(gutted, { kind: 'signifiers', liveTest: passRun(5) }, live).decision, 'reject');
 });
 
-test('publish gate: player types may only be reordered automatically', () => {
+test('publish gate: player types may only be reordered, whatever the kind', () => {
     const live = cfgWith(() => {});
     const reorder = cfgWith((c) => { c.backupPlayerTypes = ['embed', 'site', 'popout', 'mobile_web']; });
     const add = cfgWith((c) => { c.backupPlayerTypes = ['autoplay', 'site', 'popout', 'mobile_web', 'embed']; });
     assert.equal(decide(reorder, { kind: 'playertypes', liveTest: passRun(5) }, live).decision, 'auto');
-    assert.equal(decide(add, { kind: 'playertypes', liveTest: passRun(5) }, live).decision, 'human');
+    assert.equal(decide(add, { kind: 'playertypes', liveTest: passRun(5) }, live).decision, 'reject');
+    assert.equal(decide(add, { kind: 'rollback', liveTest: passRun(5) }, live).decision, 'reject');
 });
 
-test('publish gate: all-inconclusive live test is not a pass; invalid candidate is rejected', () => {
+test('publish gate: no decision ever waits for a human', () => {
     const live = cfgWith(() => {});
     const cand = cfgWith((c) => { c.clientId = 'abcdefghijklmnopqrstuvwxyz0123'; });
     const incon = { pass: true, run: { results: [1, 2, 3].map((i) => ({ verdict: 'INCONCLUSIVE', B: { ok: true } })) } };
-    assert.equal(decide(cand, { kind: 'hash', liveTest: incon }, live).decision, 'human');
+    assert.equal(decide(cand, { kind: 'hash', liveTest: incon }, live).decision, 'reject');
     assert.equal(decide({ ...cand, clientId: 'BAD!' }, { kind: 'hash', liveTest: passRun(3) }, live).decision, 'reject');
+    // Unknown kinds (rollback, agent) and a first publication use the widest rule.
+    assert.equal(decide(cand, { kind: 'rollback', liveTest: passRun(3) }, live).decision, 'reject');
+    assert.equal(decide(cand, { kind: 'rollback', liveTest: passRun(5) }, live).decision, 'auto');
+    assert.equal(decide(cand, { kind: 'hash', liveTest: passRun(3) }, null).decision, 'reject');
+    assert.equal(decide(cand, { kind: 'hash', liveTest: passRun(5) }, null).decision, 'auto');
+    assert.equal(decide(cand, null, live).decision, 'reject');
 });
 
 // ---------------------------------------------------------------- monitor verdict logic
@@ -378,6 +389,29 @@ test('verdict: no failures but no ads in control is INCONCLUSIVE, never PASS', (
 });
 
 // ---------------------------------------------------------------- adaptive schedule
+test('automerge guard: only ad-blocking code and data may merge unattended', () => {
+    const { check } = require('../tools/automerge-guard.js');
+    assert.ok(check(['vaft/vaft.user.js', 'vaft/vaft-ublock-origin.js', 'tests/rebound.test.js', 'tests/fixtures/x.json', 'CHANGELOG.md', 'tools/apply-rebound-patches.js', 'config/defaults.json', 'extension/src/background.js']).ok);
+    for (const p of ['.github/workflows/publish-config.yml', 'extension/src/shared/keys.js', 'extension/src/shared/constants.js', 'tools/publish-gate.js', 'tools/automerge-guard.js', 'tools/publish-live.sh',
+        'monitor/lib/evaluate.js', 'fixers/run.js', 'agent/orchestrate.js', 'deploy/self-update.sh', 'package.json', 'package-lock.json', 'extension/build.js', 'config/schema.json']) {
+        const r = check(['vaft/vaft.user.js', p]);
+        assert.equal(r.ok, false, p + ' must block the merge');
+        assert.deepEqual(r.blocked, [p]);
+    }
+    assert.equal(check([]).ok, false, 'an empty diff is not a fix');
+});
+
+test('fixers 4d: a breakage soon after a config publish makes the previous version a rollback suspect', () => {
+    const { regressionSuspect } = require('../fixers/run.js');
+    const cfg = { version: 7, publishedAt: '2026-11-20T10:00:00Z' };
+    assert.deepEqual(regressionSuspect(cfg, { since: '2026-11-20T13:00:00Z' }), { from: 7, to: 6, gapH: 3 });
+    assert.equal(regressionSuspect(cfg, { since: '2026-11-22T13:00:00Z' }), null, 'too long after the publish');
+    assert.equal(regressionSuspect(cfg, { since: '2026-11-20T09:00:00Z' }), null, 'breakage predates the publish');
+    assert.equal(regressionSuspect(cfg, { since: '2026-11-20T13:00:00Z', rollback: { at: 'x' } }), null, 'one rollback per breakage');
+    assert.equal(regressionSuspect({ version: 1, publishedAt: cfg.publishedAt }, { since: '2026-11-20T13:00:00Z' }), null, 'nothing to roll back to');
+    assert.equal(regressionSuspect(cfg, null), null);
+});
+
 test('schedule: stable -> full runs every 12h; unstable -> every time', () => {
     const tmp = fs.mkdtempSync(path.join(require('os').tmpdir(), 'rebound-sched-'));
     const script = `

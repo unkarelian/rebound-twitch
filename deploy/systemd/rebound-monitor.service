@@ -7,7 +7,9 @@ Type=oneshot
 WorkingDirectory=%h/Projects/rebound-twitch
 EnvironmentFile=-%h/.config/rebound-twitch/monitor.env
 Environment=REBOUND_PUBLISH_STATUS=1
+# Keep this checkout on master's tip (merged fixes, new units). Never blocks a run.
+ExecStartPre=-/bin/bash -lc 'exec deploy/self-update.sh'
 ExecStart=/bin/bash -lc 'exec node monitor/run.js --scheduled --channels 3 --duration 90 --control-duration 60'
 ExecStartPost=/bin/bash -lc 'find %h/Projects/rebound-twitch/monitor/artifacts -mindepth 1 -maxdepth 1 -mtime +14 -exec rm -rf {} + 2>/dev/null; true'
-TimeoutStartSec=25min
+TimeoutStartSec=40min
 Nice=5

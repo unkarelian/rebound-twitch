@@ -9,8 +9,13 @@ monitor, or a clear diagnosis if you can't.
 You are running in a sandboxed container. The repository is at `/work/repo` (a plain clone
 with no push access). The failure evidence is in `/work/inputs/`. When you finish, write your
 result to `/work/RESULT.json` and `/work/PR_BODY.md` (formats below). The orchestrator outside
-the sandbox verifies your work independently and opens the PR. Nothing you write is trusted
-without that check.
+the sandbox verifies your work independently. **No person reviews it.** If the re-check
+passes, your branch is merged and released to users automatically, so the re-check is the only
+thing standing between your change and every user. Nothing you write is trusted without it.
+
+Sometimes the trigger is not a breakage but the weekly merge of upstream failing verification.
+`/work/inputs/SUMMARY.md` says so when that is the case; the loop below still applies, with
+the failing checks as your reproduction.
 
 ## Security rules (non-negotiable)
 
@@ -58,8 +63,14 @@ without that check.
    classification.
 3. **Fix. Prefer config over code.** If the fix is a config value (hash, client ID, operation
    name, signifier, player type order, overlay selector), change `config/defaults.json` and say
-   in `RESULT.json` that it is config-only. The config pipeline publishes it after review. For
-   code, change the smallest thing that works.
+   in `RESULT.json` that it is config-only. The orchestrator then live-tests that config on 5
+   channels and the config pipeline signs and publishes it. For code, change the smallest thing
+   that works.
+   **Only these paths may change**, or the branch will not merge: `vaft/`, `video-swap-new/`,
+   `strip/`, `tests/`, `docs/`, `config/` (not `schema.json`), `extension/src/` (not
+   `shared/keys.js` or `shared/constants.js`), `tools/apply-rebound-patches.js` and top-level
+   `*.md`. If the real fix needs anything else (the monitor, workflows, dependencies), stop and
+   write a diagnosis that says so.
 4. **Keep the synced pair in sync.** Every logic change to `vaft/vaft.user.js` must be made to
    `vaft/vaft-ublock-origin.js` too. If you change code that a Rebound patch touches, update
    `tools/apply-rebound-patches.js` so `node tools/apply-rebound-patches.js --check` passes.
@@ -69,7 +80,7 @@ without that check.
    - `node tools/apply-rebound-patches.js --check`
    - `node tools/validate-js.js`
    - `npm test` (includes your new regression test, which must now pass)
-   - `node extension/build.js && npx web-ext lint --source-dir extension/dist/firefox`
+   - `node extension/build.js && npx web-ext lint --source-dir extension/dist/firefox --self-hosted`
    - **Live:** `node monitor/run.js --channels 3 --no-state --out /work/live-after.json`. You
      need no FAIL on any channel, at least one PASS, and check B (content plays) ok on all
      three. A "fix" that passes by blocking the stream fails check B. INCONCLUSIVE means Twitch
@@ -83,9 +94,10 @@ without that check.
      `{"status": "fixed" | "diagnosis", "configOnly": bool, "breakageType": "...", "rootCause": "...", "summary": "...", "tests": "...", "liveBefore": "...", "liveAfter": "..."}`
    - `/work/PR_BODY.md`: mobile-friendly. Put the **monitor evidence first** (a before/after
      table of verdicts per channel). Then root cause in 2–4 sentences, what changed and why,
-     the regression test you added, and anything the reviewer should check by hand. Keep it
-     short, because the reviewer approves from a phone.
+     the regression test you added, and anything that could still be wrong. Keep it short. It is
+     the record of an unattended change, read after the fact.
 
 If you finish with a diagnosis instead of a fix, still commit anything useful (for example the
 failing regression test), and make `PR_BODY.md` say exactly what you found, what you tried, why
-it didn't work, and what a human should look at next.
+it didn't work, and what the next attempt (you, six hours from now, with a fresh sandbox)
+should try first.

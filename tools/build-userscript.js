@@ -6,7 +6,8 @@
 const fs = require('fs');
 const path = require('path');
 const ROOT = path.resolve(__dirname, '..');
-const pkg = require('../package.json');
+const pkg = { ...require('../package.json') };
+if (/^\d+(\.\d+){1,3}$/.test(process.env.REBOUND_VERSION || '')) pkg.version = process.env.REBOUND_VERSION;
 const src = fs.readFileSync(path.join(ROOT, 'vaft/vaft.user.js'), 'utf8');
 const vaftVersion = src.match(/@version\s+(\S+)/)[1];
 const url = 'https://github.com/unkarelian/rebound-twitch/releases/latest/download/rebound-vaft.user.js';

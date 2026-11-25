@@ -11,9 +11,11 @@ A Twitch ad blocker that **repairs itself fast** when Twitch changes something. 
   extension (does Twitch serve ads right now?) and once with it. It checks that no ad segments get
   through, content plays, no ad UI shows and nothing errors. Status: [`status.json`](https://raw.githubusercontent.com/unkarelian/rebound-twitch/status/status.json).
 - **Deterministic fixers.** A stale hash or client ID gets fixed, re-verified live and published
-  with no human involved. New ad markers and player-type order changes get proposed with evidence.
+  with no human involved. So are new ad markers and player-type order changes, once they pass a
+  5-channel live test. A config that breaks things is rolled back the same way.
 - **An agent fix loop.** Code-level breakages get a sandboxed coding agent that reproduces the
-  failure as a test, fixes it, passes the live monitor and opens a PR for one-click human review.
+  failure as a test and fixes it. A fix that passes an independent live re-check merges and
+  releases itself. Nobody approves anything.
 
 No telemetry. Not affiliated with Twitch.
 

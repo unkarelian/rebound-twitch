@@ -1,22 +1,39 @@
-# The monitor host can push agent/** and fixer/** branches (deploy key) but holds
-# no API token. This opens the PR for it. The PR title/body/labels travel in the
-# branch's tip commit (an empty commit: subject = title, body = PR body, trailer
-# "Rebound-Labels: a,b"). Merging is always a human decision (master is protected).
-name: Open PR for automation branch
+# The monitor host can push agent/**, fixer/** and verified/** branches (deploy
+# key) but holds no API token. This opens the PR for it and, when the branch is
+# a verified one, merges it and starts a release. Nobody has to approve.
+#
+# The PR title/body/labels travel in the branch's tip commit (an empty commit:
+# subject = title, body = PR body, trailer "Rebound-Labels: a,b").
+#
+# Merge rules, all of them required:
+#   1. the label `verified`: the host re-checked the branch in a clean container
+#      (patches, syntax, tests, lint and a live run on 3 channels);
+#   2. tools/automerge-guard.js from MASTER accepts the changed paths (only the
+#      ad-blocking code and its data; never workflows, keys, signing tools, the
+#      monitor or dependencies);
+#   3. the same checks as Rebound CI pass here.
+# A branch that fails any of them stays an open PR and changes nothing.
+name: Open and merge PR for automation branch
 on:
   push:
-    branches: ['agent/**', 'fixer/**']
+    branches: ['agent/**', 'fixer/**', 'verified/**']
 permissions:
-  contents: read
+  contents: write
   pull-requests: write
   issues: write
+  actions: write
+concurrency:
+  group: automerge
+  cancel-in-progress: false
 jobs:
   pr:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with: { fetch-depth: 1 }
-      - env:
+        with: { fetch-depth: 0 }
+      - name: Open or update the PR
+        id: pr
+        env:
           GH_TOKEN: ${{ github.token }}
         run: |
           title=$(git log -1 --format=%s | head -c 200)
@@ -27,6 +44,43 @@ jobs:
           if gh pr view "$GITHUB_REF_NAME" --json state -q .state 2>/dev/null | grep -q OPEN; then
             gh pr edit "$GITHUB_REF_NAME" --body-file /tmp/body.md
           else
-            draft=""; case "$labels" in *needs-human*) draft="--draft";; esac
+            draft=""; case ",$labels," in *,verified,*) ;; *) draft="--draft";; esac
             gh pr create --base master --head "$GITHUB_REF_NAME" --title "$title" --body-file /tmp/body.md --label "$labels" $draft
           fi
+          case ",$labels," in *,verified,*) echo "verified=1" >> "$GITHUB_OUTPUT";; esac
+      - name: Guard (changed paths, judged by master's copy of the guard)
+        if: steps.pr.outputs.verified == '1'
+        id: guard
+        run: |
+          git show origin/master:tools/automerge-guard.js > /tmp/guard.js
+          if out=$(node /tmp/guard.js origin/master); then echo "ok=1" >> "$GITHUB_OUTPUT"; fi
+          echo "$out"
+          echo "Automerge guard: \`$out\`" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/setup-node@v4
+        if: steps.guard.outputs.ok == '1'
+        with: { node-version: 22, cache: npm }
+      - name: Checks
+        if: steps.guard.outputs.ok == '1'
+        env: { PUPPETEER_SKIP_DOWNLOAD: "1" }
+        run: |
+          npm ci
+          node tools/apply-rebound-patches.js --check
+          node tools/validate-js.js
+          npm test
+          node extension/build.js
+          npx web-ext lint --source-dir extension/dist/firefox --self-hosted
+          node tools/config-tool.js validate config/defaults.json
+      - name: Merge and release
+        if: steps.guard.outputs.ok == '1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr merge "$GITHUB_REF_NAME" --merge
+          git push -q origin --delete "$GITHUB_REF_NAME" || true
+          gh workflow run rebound-release.yml --ref master
+      - name: Say why it was not merged
+        if: steps.pr.outputs.verified == '1' && steps.guard.outputs.ok != '1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr comment "$GITHUB_REF_NAME" --body "Not merged automatically. This branch changes files outside what automation may change (see tools/automerge-guard.js). It stays open and changes nothing."

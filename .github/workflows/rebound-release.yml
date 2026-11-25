@@ -1,21 +1,29 @@
-# Code releases: always human. Run manually (or push a v* tag) after merging a
-# reviewed PR. The `release` environment requires approval; AMO / Chrome Web
-# Store credentials are environment secrets there. Steps whose secrets are
-# missing are skipped, so the GitHub Release (with the userscript escape hatch)
-# always gets made.
+# Code releases, with nobody in the loop. Started by the workflows that merge
+# into master (verified agent fixes, upstream syncs, config syncs), or by hand.
+#
+# - Skips when nothing a user runs has changed since the last release.
+# - The version is <major>.<minor> from package.json plus the commit count of
+#   master, so it only ever goes up and no version-bump commit is needed.
+# - Firefox: signed on AMO as an unlisted (self-distributed) add-on, which needs
+#   no review, then offered to installed copies through updates.json on the
+#   `updates` branch (the manifest's update_url). Needs AMO_JWT_ISSUER and
+#   AMO_JWT_SECRET in the `release` environment; without them the step is
+#   skipped and only the userscript and unsigned builds are released.
+# - Userscript: its @updateURL is the latest GitHub Release, so userscript
+#   managers pick it up by themselves.
 name: Release extension
 on:
   workflow_dispatch:
     inputs:
-      amo_channel:
-        description: AMO channel
-        type: choice
-        options: [unlisted, listed]
-        default: unlisted
-  push:
-    tags: ['v*']
+      force:
+        description: Release even if nothing changed since the last release
+        type: boolean
+        default: false
 permissions:
   contents: write
+concurrency:
+  group: release
+  cancel-in-progress: false
 jobs:
   release:
     runs-on: ubuntu-latest
@@ -24,45 +32,72 @@ jobs:
       # Step `if:` cannot read secrets directly; expose presence flags.
       HAS_AMO: ${{ secrets.AMO_JWT_ISSUER != '' }}
       HAS_CWS: ${{ secrets.CWS_CLIENT_ID != '' }}
+      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: 22, cache: npm }
-      - run: npm ci
-        env: { PUPPETEER_SKIP_DOWNLOAD: "1" }
-      - run: node tools/apply-rebound-patches.js --check && node tools/validate-js.js && npm test
-      - name: Build
+        with: { ref: master, fetch-depth: 0 }
+      - name: Anything to release?
+        id: diff
         run: |
+          last=$(gh release list --limit 1 --json tagName -q '.[0].tagName // ""' || true)
+          paths="vaft/vaft.user.js extension config/defaults.json tools/build-userscript.js"
+          if [ -n "$last" ] && [ "${{ github.event.inputs.force }}" != "true" ] && git rev-parse -q --verify "refs/tags/$last" >/dev/null && git diff --quiet "$last" HEAD -- $paths; then
+            echo "Nothing a user runs changed since $last." | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          v="$(node -p 'require("./package.json").version.split(".").slice(0, 2).join(".")').$(git rev-list --count HEAD)"
+          echo "REBOUND_VERSION=$v" >> "$GITHUB_ENV"
+          echo "go=1" >> "$GITHUB_OUTPUT"
+          echo "Releasing $v (previous: ${last:-none})" | tee -a "$GITHUB_STEP_SUMMARY"
+      - uses: actions/setup-node@v4
+        if: steps.diff.outputs.go == '1'
+        with: { node-version: 22, cache: npm }
+      - name: Test and build
+        if: steps.diff.outputs.go == '1'
+        env: { PUPPETEER_SKIP_DOWNLOAD: "1" }
+        run: |
+          npm ci
+          node tools/apply-rebound-patches.js --check && node tools/validate-js.js && npm test
           node extension/build.js
           node tools/build-userscript.js
-          npx web-ext lint --source-dir extension/dist/firefox
-          v=$(node -p 'require("./package.json").version')
-          echo "VERSION=$v" >> "$GITHUB_ENV"
-          (cd extension/dist/chrome && zip -qr "../rebound-twitch-chrome-$v.zip" .)
-          npx web-ext build --source-dir extension/dist/firefox --artifacts-dir extension/dist --filename "rebound-twitch-firefox-$v-unsigned.zip" --overwrite-dest
-      - name: Sign on AMO (${{ github.event.inputs.amo_channel || 'unlisted' }})
-        if: env.HAS_AMO == 'true'
+          npx web-ext lint --source-dir extension/dist/firefox --self-hosted
+          (cd extension/dist/chrome && zip -qr "../rebound-twitch-chrome-$REBOUND_VERSION.zip" .)
+          npx web-ext build --source-dir extension/dist/firefox --artifacts-dir extension/dist --filename "rebound-twitch-firefox-$REBOUND_VERSION-unsigned.zip" --overwrite-dest
+      - name: Sign on AMO (unlisted)
+        if: steps.diff.outputs.go == '1' && env.HAS_AMO == 'true'
         env:
           AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
           AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
         run: |
           npx web-ext sign --source-dir extension/dist/firefox --artifacts-dir extension/dist/amo \
-            --channel "${{ github.event.inputs.amo_channel || 'unlisted' }}" \
-            --api-key "$AMO_JWT_ISSUER" --api-secret "$AMO_JWT_SECRET" --timeout 900000 \
-            --amo-metadata extension/amo-metadata.json
+            --channel unlisted --api-key "$AMO_JWT_ISSUER" --api-secret "$AMO_JWT_SECRET" --timeout 900000
+          mv "$(ls extension/dist/amo/*.xpi | head -1)" "extension/dist/rebound-twitch-firefox-$REBOUND_VERSION.xpi"
       - name: Upload to Chrome Web Store
-        if: env.HAS_CWS == 'true'
+        if: steps.diff.outputs.go == '1' && env.HAS_CWS == 'true'
+        continue-on-error: true
         env:
           CWS_CLIENT_ID: ${{ secrets.CWS_CLIENT_ID }}
           CWS_CLIENT_SECRET: ${{ secrets.CWS_CLIENT_SECRET }}
           CWS_REFRESH_TOKEN: ${{ secrets.CWS_REFRESH_TOKEN }}
           CWS_EXTENSION_ID: ${{ vars.CWS_EXTENSION_ID }}
         run: |
-          npx --yes chrome-webstore-upload-cli@3 upload --source "extension/dist/rebound-twitch-chrome-$VERSION.zip" \
-            --extension-id "$CWS_EXTENSION_ID" --client-id "$CWS_CLIENT_ID" --client-secret "$CWS_CLIENT_SECRET" --refresh-token "$CWS_REFRESH_TOKEN"
+          npx --yes chrome-webstore-upload-cli@3 upload --source "extension/dist/rebound-twitch-chrome-$REBOUND_VERSION.zip" \
+            --extension-id "$CWS_EXTENSION_ID" --client-id "$CWS_CLIENT_ID" --client-secret "$CWS_CLIENT_SECRET" --refresh-token "$CWS_REFRESH_TOKEN" --auto-publish
       - name: GitHub Release
-        env: { GH_TOKEN: "${{ github.token }}" }
+        if: steps.diff.outputs.go == '1'
         run: |
-          files="extension/dist/rebound-vaft.user.js extension/dist/rebound-twitch-chrome-$VERSION.zip extension/dist/rebound-twitch-firefox-$VERSION-unsigned.zip"
-          for f in extension/dist/amo/*.xpi; do [ -f "$f" ] && files="$files $f"; done
-          gh release create "v$VERSION" $files --title "Rebound for Twitch $VERSION" --generate-notes || gh release upload "v$VERSION" $files --clobber
+          files="extension/dist/rebound-vaft.user.js extension/dist/rebound-twitch-chrome-$REBOUND_VERSION.zip extension/dist/rebound-twitch-firefox-$REBOUND_VERSION-unsigned.zip"
+          xpi="extension/dist/rebound-twitch-firefox-$REBOUND_VERSION.xpi"
+          [ -f "$xpi" ] && files="$files $xpi"
+          gh release create "v$REBOUND_VERSION" $files --target "$(git rev-parse HEAD)" --title "Rebound for Twitch $REBOUND_VERSION" --generate-notes || gh release upload "v$REBOUND_VERSION" $files --clobber
+      - name: Offer the signed build to installed Firefox copies (updates.json)
+        if: steps.diff.outputs.go == '1' && env.HAS_AMO == 'true'
+        run: |
+          xpi="extension/dist/rebound-twitch-firefox-$REBOUND_VERSION.xpi"
+          node tools/updates-json.js "$REBOUND_VERSION" "$xpi" "https://github.com/${{ github.repository }}/releases/download/v$REBOUND_VERSION/$(basename "$xpi")" > /tmp/updates.json
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -q --orphan updates && git rm -rfq . >/dev/null
+          cp /tmp/updates.json updates.json && git add updates.json
+          git commit -qm "updates.json: $REBOUND_VERSION"
+          git push -q -f origin updates

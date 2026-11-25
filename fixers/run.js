@@ -12,6 +12,13 @@
 // 4c player types: probe each backup player type for ad-free playlists; propose
 //    a better order with evidence (5-channel gate, as 4b).
 //
+// 4d regression: a breakage that began soon after a config publish is first
+//    answered by re-publishing the previous version's content, if that content
+//    passes a 5-channel live test now. Runs before 4a-4c on a breakage.
+//
+// Nothing here waits for a person. A candidate either meets the gate and is
+// published, or is dropped and the next run tries again with fresh evidence.
+//
 // Publishing = pushing a branch config-candidates/<id> containing
 // candidate/config.json + candidate/evidence.json. The publish-config workflow,
 // which alone holds the signing key, enforces what may auto-publish.
@@ -208,8 +215,9 @@ async function fixSignifiers(cfg) {
     const candidate = nextCandidate(cfg, { adSignifiers: next }, 'Signifier update (4b): ' + why.join(' '));
     log('4b candidate:', why.join(' '), '-> 5-channel live test');
     const lt = liveTest(candidate, 5);
+    if (!lt.pass) return { status: 'candidate-failed-live-test', why, liveTest: lt };
     const sub = submitCandidate('signifiers', candidate, { why, adds, removes, liveTest: lt, autoApprovable: lt.pass });
-    return { status: lt.pass ? 'submitted-auto' : 'submitted-needs-human', why, candidate: sub.id };
+    return { status: 'submitted', why, candidate: sub.id };
 }
 
 // ------------------------------------------------------------------ 4c
@@ -240,8 +248,49 @@ async function fixPlayerTypes(cfg) {
     if (proposed.join() === cfg.backupPlayerTypes.join()) return { status: 'ok', score };
     const candidate = nextCandidate(cfg, { backupPlayerTypes: proposed }, 'Player-type order (4c): ' + proposed.join(','));
     const lt = liveTest(candidate, 5);
+    if (!lt.pass) return { status: 'candidate-failed-live-test', proposed, liveTest: lt };
     const sub = submitCandidate('playertypes', candidate, { proposed, previous: cfg.backupPlayerTypes, aggregate: agg, liveTest: lt, autoApprovable: lt.pass });
-    return { status: lt.pass ? 'submitted-auto' : 'submitted-needs-human', proposed, candidate: sub.id };
+    return { status: 'submitted', proposed, candidate: sub.id };
+}
+
+// ------------------------------------------------------------------ 4d
+// Should the previous config be tried? Pure, so it can be unit-tested.
+// Yes when the breakage began within REGRESSION_WINDOW_H after the live config
+// was published, there is an earlier version, and this breakage has not already
+// had a rollback.
+const REGRESSION_WINDOW_H = 24;
+function regressionSuspect(cfg, breaking) {
+    if (!breaking || breaking.rollback) return null;
+    if (!(cfg.version > 1) || !cfg.publishedAt) return null;
+    const gapH = (Date.parse(breaking.since) - Date.parse(cfg.publishedAt)) / 3600e3;
+    if (!(gapH >= 0 && gapH <= REGRESSION_WINDOW_H)) return null;
+    return { from: cfg.version, to: cfg.version - 1, gapH: Math.round(gapH * 10) / 10 };
+}
+
+async function fixRegression(cfg) {
+    const st = stateLib.readJson('state.json', {});
+    const sus = regressionSuspect(cfg, st.breaking);
+    if (!sus) return { status: 'ok' };
+    let prev;
+    try {
+        execFileSync('git', ['-C', ROOT, 'fetch', '-q', 'origin', 'live'], { stdio: 'pipe' });
+        prev = JSON.parse(execFileSync('git', ['-C', ROOT, 'show', `FETCH_HEAD:history/v${sus.to}.json`], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
+    } catch (e) {
+        return { status: 'error', error: 'cannot read published v' + sus.to + ': ' + String(e.stderr || e).slice(0, 200) };
+    }
+    const strip = (c) => { const o = { ...c }; delete o.version; delete o.publishedAt; delete o.note; return JSON.stringify(o); };
+    if (strip(prev) === strip(cfg)) return { status: 'ok', reason: 'previous version has the same content' };
+    const candidate = nextCandidate(prev, { version: cfg.version }, `Auto-rollback (4d): breakage began ${sus.gapH}h after v${sus.from}; back to the content of v${sus.to}`);
+    log(`4d: breakage began ${sus.gapH}h after config v${sus.from} -> live-testing the content of v${sus.to} on 5 channels`);
+    const lt = liveTest(candidate, 5);
+    log('4d live test:', JSON.stringify({ pass: lt.pass, passes: lt.passes, fails: lt.fails }));
+    if (!lt.pass) return { status: 'previous-config-also-fails', liveTest: lt };
+    const sub = submitCandidate('rollback', candidate, { why: [`v${sus.from} -> content of v${sus.to}`], suspect: sus, liveTest: lt });
+    if (sub.pushed) {
+        const s2 = stateLib.readJson('state.json', {});
+        if (s2.breaking) { s2.breaking.rollback = { at: new Date().toISOString(), from: sus.from, to: sus.to }; stateLib.writeJson('state.json', s2); }
+    }
+    return { status: sub.pushed ? 'submitted' : sub.dryRun ? 'dry-run' : 'submit-failed', candidate: sub.id, ...sus };
 }
 
 // ------------------------------------------------------------------ main
@@ -266,6 +315,10 @@ async function main() {
         const cfg = currentLiveConfig();
         log(`trigger=${trigger} config v${cfg.version}`);
         const report = { at: new Date().toISOString(), trigger, configVersion: cfg.version };
+        if (trigger === 'breakage' && only.includes('hash')) report.regression = await fixRegression(cfg).catch((e) => ({ status: 'error', error: String(e.stack || e) }));
+        // A rollback is on its way: let it land before proposing anything on top of the old config.
+        const rolledBack = report.regression && report.regression.status === 'submitted';
+        if (rolledBack) only.length = 0;
         if (only.includes('hash')) report.hash = await fixHashes(cfg).catch((e) => ({ status: 'error', error: String(e.stack || e) }));
         if (only.includes('signifiers')) report.signifiers = await fixSignifiers(cfg).catch((e) => ({ status: 'error', error: String(e.stack || e) }));
         // Player-type probing costs ~20 GQL calls; hourly is plenty, skip on breakage runs.
@@ -273,7 +326,7 @@ async function main() {
         const st = stateLib.readJson('state.json', {});
         if (st.breaking && trigger === 'breakage') {
             st.breaking.fixerAttempts = (st.breaking.fixerAttempts || 0) + 1;
-            st.breaking.lastFixer = { at: report.at, hash: report.hash && report.hash.status, signifiers: report.signifiers && report.signifiers.status };
+            st.breaking.lastFixer = { at: report.at, regression: report.regression && report.regression.status, hash: report.hash && report.hash.status, signifiers: report.signifiers && report.signifiers.status };
             stateLib.writeJson('state.json', st);
         }
         stateLib.writeJson('last-fixers.json', report);
@@ -284,4 +337,6 @@ async function main() {
     }
 }
 
-main().catch((e) => { log(e.stack || e); process.exit(1); });
+if (require.main === module) main().catch((e) => { log(e.stack || e); process.exit(1); });
+
+module.exports = { regressionSuspect };
