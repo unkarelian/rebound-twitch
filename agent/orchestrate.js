@@ -79,7 +79,8 @@ function claudeToken() {
         if (!t) {
             // The host login refreshes its own access token whenever it is used, so use it once.
             log('host Claude access token is too short-lived; refreshing it');
-            spawnSync('bash', ['-lc', 'claude -p "Reply with the single word ok." --max-turns 1'], { cwd: os.tmpdir(), stdio: 'ignore', timeout: 3 * 60000 });
+            // ~/.local/bin is where the native installer puts it; login shells here do not have it on PATH.
+            spawnSync('bash', ['-lc', 'PATH="$HOME/.local/bin:$PATH" claude -p "Reply with the single word ok." --max-turns 1'], { cwd: os.tmpdir(), stdio: 'ignore', timeout: 3 * 60000 });
             t = hostToken();
         }
         if (t) return t;
